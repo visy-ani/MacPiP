@@ -1,5 +1,5 @@
 /* Drag bar: hidden (and removed from the drag-region map) until hovered. */
-#ytfloat-dragbar {
+#macpip-dragbar {
   display: none !important;
   position: fixed !important;
   top: 0 !important;
@@ -13,18 +13,18 @@
   user-select: none !important;
   cursor: grab !important;
 }
-html[data-ytfloat-bar] #ytfloat-dragbar {
+html[data-macpip-bar] #macpip-dragbar {
   display: flex !important;
   align-items: center !important;
   justify-content: flex-end !important;
 }
-#ytfloat-dragbar .ytfloat-buttons {
+#macpip-dragbar .macpip-buttons {
   display: flex !important;
   gap: 4px !important;
   padding: 0 6px !important;
   -webkit-app-region: no-drag !important;
 }
-#ytfloat-dragbar .ytfloat-btn {
+#macpip-dragbar .macpip-btn {
   all: unset;
   width: 22px !important;
   height: 18px !important;
@@ -36,32 +36,32 @@ html[data-ytfloat-bar] #ytfloat-dragbar {
   cursor: pointer !important;
   -webkit-app-region: no-drag !important;
 }
-#ytfloat-dragbar .ytfloat-btn:hover {
+#macpip-dragbar .macpip-btn:hover {
   background: rgba(255, 255, 255, 0.18) !important;
 }
 
 /* Compact mode: hide YouTube chrome, let the player fill the window. */
-html[data-ytfloat-compact] #masthead-container,
-html[data-ytfloat-compact] tp-yt-app-drawer,
-html[data-ytfloat-compact] #guide,
-html[data-ytfloat-compact] ytd-mini-guide-renderer {
+html[data-macpip-compact] #masthead-container,
+html[data-macpip-compact] tp-yt-app-drawer,
+html[data-macpip-compact] #guide,
+html[data-macpip-compact] ytd-mini-guide-renderer {
   display: none !important;
 }
-html[data-ytfloat-compact] ytd-app {
+html[data-macpip-compact] ytd-app {
   --ytd-masthead-height: 0px !important;
 }
-html[data-ytfloat-compact] #page-manager {
+html[data-macpip-compact] #page-manager {
   margin-top: 0 !important;
   margin-left: 0 !important;
 }
-html[data-ytfloat-compact] ytd-page-manager > :not(ytd-watch-flexy) {
+html[data-macpip-compact] ytd-page-manager > :not(ytd-watch-flexy) {
   margin-left: 0 !important;
 }
 /* On a watch page, pin the player to the whole viewport. */
-html[data-ytfloat-compact] body:has(ytd-watch-flexy:not([hidden])) {
+html[data-macpip-compact] body:has(ytd-watch-flexy:not([hidden])) {
   overflow: hidden !important;
 }
-html[data-ytfloat-compact] ytd-watch-flexy:not([hidden]) #movie_player {
+html[data-macpip-compact] ytd-watch-flexy:not([hidden]) #movie_player {
   position: fixed !important;
   inset: 0 !important;
   width: 100vw !important;
@@ -69,7 +69,7 @@ html[data-ytfloat-compact] ytd-watch-flexy:not([hidden]) #movie_player {
   z-index: 2000 !important;
   background: #000 !important;
 }
-html[data-ytfloat-compact] ytd-watch-flexy:not([hidden]) #movie_player video {
+html[data-macpip-compact] ytd-watch-flexy:not([hidden]) #movie_player video {
   left: 0 !important;
   top: 0 !important;
   width: 100vw !important;

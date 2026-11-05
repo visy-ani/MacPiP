@@ -1,8 +1,8 @@
 {
   "name": "macpip",
-  "productName": "YT Float",
+  "productName": "MacPiP",
   "version": "1.0.0",
-  "description": "YouTube in a floating, always-on-top window",
+  "description": "Picture-in-picture for Mac: a floating, always-on-top window",
   "author": "Anish Yadav",
   "contributors": ["Gaurav Dadhich (original YT Float)"],
   "license": "Unlicense",
@@ -19,8 +19,8 @@
     "make-launcher": "bash scripts/make-dev-launcher.sh"
   },
   "build": {
-    "appId": "local.ytfloat",
-    "productName": "YT Float",
+    "appId": "dev.visyani.macpip",
+    "productName": "MacPiP",
     "files": [
       "src/**/*",
       "assets/**/*",

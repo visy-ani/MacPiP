@@ -18,7 +18,7 @@ const HOME_URL = 'https://www.youtube.com';
 const SIGNIN_URL =
   'https://accounts.google.com/ServiceLogin?service=youtube&continue=' +
   encodeURIComponent('https://www.youtube.com/signin?action_handle_signin=true&next=%2F');
-const PARTITION = 'persist:ytfloat';
+const PARTITION = 'persist:macpip';
 const MIN_W = 320;
 const MIN_H = 180;
 const BAR_HEIGHT = 24;
@@ -99,7 +99,7 @@ function createWindow() {
     fullscreenable: false,
     backgroundColor: '#0f0f0f',
     show: false,
-    title: 'YT Float',
+    title: 'MacPiP',
     webPreferences: {
       partition: PARTITION,
       preload: path.join(__dirname, 'preload.js'),
@@ -319,7 +319,7 @@ function buildAppMenu() {
   // Hidden app menu: provides the local shortcuts and standard Edit keys (⌘C/⌘V in sign-in forms).
   return Menu.buildFromTemplate([
     {
-      label: 'YT Float',
+      label: 'MacPiP',
       submenu: [
         { role: 'about' },
         { type: 'separator' },
@@ -365,7 +365,7 @@ function buildTrayMenu() {
     { label: 'Reset Window Position', click: resetPosition },
     { label: 'Sign in with Google (separate window)…', click: () => openSigninWindow() },
     { type: 'separator' },
-    { label: 'Quit YT Float', accelerator: 'Command+Q', click: () => app.quit() },
+    { label: 'Quit MacPiP', accelerator: 'Command+Q', click: () => app.quit() },
   ]);
 }
 
@@ -401,7 +401,7 @@ app.whenReady().then(() => {
   createWindow();
 
   tray = new Tray(trayImage());
-  tray.setToolTip('YT Float');
+  tray.setToolTip('MacPiP');
   updateMenus();
 
   if (!globalShortcut.register('Alt+Command+Y', toggleWindow)) {

@@ -11,7 +11,7 @@ exports.default = async function (context) {
   if (context.appOutDir.endsWith('-temp')) return;
   const name = `${context.packager.appInfo.productFilename}.app`;
   const app = path.join(context.appOutDir, name);
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ytfloat-sign-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'macpip-sign-'));
   const tmpApp = path.join(tmp, name);
   try {
     execFileSync('ditto', ['--norsrc', '--noextattr', app, tmpApp]);

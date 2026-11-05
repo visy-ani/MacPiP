@@ -1,11 +1,11 @@
 #!/bin/bash
-# Creates "~/Applications/YT Float (Dev).app": a double-clickable launcher that
-# quits any running YT Float and starts this checkout's source (like `npm start`).
+# Creates "~/Applications/MacPiP (Dev).app": a double-clickable launcher that
+# quits any running MacPiP and starts this checkout's source (like `npm start`).
 set -euo pipefail
 
 PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
 ELECTRON="$PROJECT/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
-APP="$HOME/Applications/YT Float (Dev).app"
+APP="$HOME/Applications/MacPiP (Dev).app"
 
 if [ ! -x "$ELECTRON" ]; then
   echo "Electron not found. Run 'npm install' in $PROJECT first." >&2
@@ -21,15 +21,15 @@ set electronBin to "$ELECTRON"
 try
 	do shell script "test -x " & quoted form of electronBin
 on error
-	display alert "YT Float (Dev)" message "Electron was not found in " & projectDir & ". Run npm install there first." as critical
+	display alert "MacPiP (Dev)" message "Electron was not found in " & projectDir & ". Run npm install there first." as critical
 	return
 end try
--- Only one YT Float can run at a time, so stop the installed app or an older dev run first.
+-- Only one MacPiP can run at a time, so stop the installed app or an older dev run first.
 -- Match exact process name / command start only, so unrelated processes mentioning these paths survive.
-do shell script "pkill -x 'YT Float' ; pkill -f " & quoted form of ("^" & electronBin & " ") & " ; true"
+do shell script "pkill -x 'MacPiP' ; pkill -f " & quoted form of ("^" & electronBin & " ") & " ; true"
 delay 1
 -- Background only the Electron command (not a subshell holding stdout), so the applet exits right away.
-do shell script "cd " & quoted form of projectDir & "; nohup " & quoted form of electronBin & " . > /tmp/yt-float-dev.log 2>&1 < /dev/null &"
+do shell script "cd " & quoted form of projectDir & "; nohup " & quoted form of electronBin & " . > /tmp/macpip-dev.log 2>&1 < /dev/null &"
 APPLESCRIPT
 
 mkdir -p "$HOME/Applications"
@@ -50,4 +50,4 @@ codesign --force --deep --sign - "$APP"
 touch "$APP"
 
 echo "Created: $APP"
-echo "Logs from dev runs go to /tmp/yt-float-dev.log"
+echo "Logs from dev runs go to /tmp/macpip-dev.log"
