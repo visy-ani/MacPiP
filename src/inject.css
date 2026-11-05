@@ -76,3 +76,30 @@ html[data-macpip-compact] ytd-watch-flexy:not([hidden]) #movie_player video {
   height: 100vh !important;
   object-fit: contain !important;
 }
+
+/* URL bar overlay (⌘L). */
+#macpip-urlbar {
+  position: fixed !important;
+  top: 32px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(90vw, 520px) !important;
+  z-index: 2147483647 !important;
+  -webkit-app-region: no-drag !important;
+}
+#macpip-urlbar input {
+  all: unset;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  padding: 8px 12px !important;
+  font: 13px -apple-system, BlinkMacSystemFont, sans-serif !important;
+  color: #f2f2f2 !important;
+  background: rgba(28, 28, 30, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(12px) !important;
+}
+#macpip-urlbar input::placeholder {
+  color: rgba(255, 255, 255, 0.45) !important;
+}

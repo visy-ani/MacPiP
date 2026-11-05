@@ -10,6 +10,8 @@ const DEFAULTS = {
   lockAspect: true,
   compact: false,
   showInDock: false,
+  homeUrl: 'https://www.youtube.com',
+  recentUrls: [],
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

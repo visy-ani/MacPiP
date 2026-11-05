@@ -9,12 +9,19 @@ const {
   session,
   shell,
   ipcMain,
+  clipboard,
 } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const store = require('./store');
 
-const HOME_URL = 'https://www.youtube.com';
+const PRESET_SITES = [
+  { label: 'YouTube', url: 'https://www.youtube.com' },
+  { label: 'YouTube Music', url: 'https://music.youtube.com' },
+  { label: 'Twitch', url: 'https://www.twitch.tv' },
+  { label: 'Vimeo', url: 'https://vimeo.com' },
+];
+const MAX_RECENT = 8;
 const SIGNIN_URL =
   'https://accounts.google.com/ServiceLogin?service=youtube&continue=' +
   encodeURIComponent('https://www.youtube.com/signin?action_handle_signin=true&next=%2F');
@@ -160,18 +167,74 @@ function createWindow() {
   win.on('hide', updateTrayMenu);
 
   win.once('ready-to-show', () => win.show());
-  win.loadURL(HOME_URL);
+  win.loadURL(store.get('homeUrl'));
 
   startHoverWatcher();
 }
 
+// "www.youtube.com" -> "youtube.com". Good enough to tell "same site" for popups.
+function baseDomain(hostname) {
+  return hostname.split('.').slice(-2).join('.');
+}
+
+// Popups stay in the window when they're YouTube/Google or the same site as the current page.
 function isInternalUrl(url) {
   try {
     const { hostname } = new URL(url);
-    return /(^|\.)(youtube\.com|youtu\.be|google\.com|googleusercontent\.com)$/.test(hostname);
+    if (/(^|\.)(youtube\.com|youtu\.be|google\.com|googleusercontent\.com)$/.test(hostname)) return true;
+    const current = win && !win.isDestroyed() ? win.webContents.getURL() : '';
+    return current !== '' && baseDomain(new URL(current).hostname) === baseDomain(hostname);
   } catch {
     return false;
   }
+}
+
+// Turn whatever the user typed into a URL: add https:// to bare domains, search everything else.
+function normalizeUrl(input) {
+  const text = String(input || '').trim();
+  if (!text) return null;
+  if (/^https?:\/\//i.test(text)) return text;
+  if (!/\s/.test(text) && /^[^/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(text)) return `https://${text}`;
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(text)) return `http://${text}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(text)}`;
+}
+
+function addRecent(url) {
+  const recent = store.get('recentUrls').filter((u) => u !== url);
+  recent.unshift(url);
+  store.set('recentUrls', recent.slice(0, MAX_RECENT));
+}
+
+function openUrl(input) {
+  const url = normalizeUrl(input);
+  if (!url) return;
+  addRecent(url);
+  win.webContents.loadURL(url);
+  if (!win.isVisible()) win.show();
+  updateMenus();
+}
+
+function showUrlBar() {
+  if (!win.isVisible()) win.show();
+  win.focus();
+  win.webContents.send('url-bar', win.webContents.getURL());
+}
+
+function openClipboardUrl() {
+  const text = clipboard.readText().trim();
+  if (/^https?:\/\/\S+$/i.test(text)) openUrl(text);
+}
+
+function setCurrentAsHome() {
+  const url = win.webContents.getURL();
+  if (/^https?:/i.test(url)) {
+    store.set('homeUrl', url);
+    updateMenus();
+  }
+}
+
+function goHome() {
+  win.webContents.loadURL(store.get('homeUrl'));
 }
 
 function isSigninUrl(url) {
@@ -216,11 +279,15 @@ ipcMain.on('bar-action', (_e, action) => {
   if (action === 'back') {
     if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   } else if (action === 'home') {
-    wc.loadURL(HOME_URL);
+    goHome();
+  } else if (action === 'url') {
+    showUrlBar();
   } else if (action === 'close') {
     win.hide();
   }
 });
+
+ipcMain.on('open-url', (_e, input) => openUrl(input));
 
 function toggleWindow() {
   if (win.isVisible()) {
@@ -307,7 +374,7 @@ function openSigninWindow(url = SIGNIN_URL) {
     // Once Google hands us back to YouTube, we're signed in.
     if (new URL(u).hostname.endsWith('youtube.com')) {
       signinWin.close();
-      win.webContents.loadURL(HOME_URL);
+      goHome();
       win.show();
     }
   });
@@ -339,7 +406,8 @@ function buildAppMenu() {
         { label: 'Decrease Opacity', accelerator: 'Alt+Command+Down', click: () => changeOpacity(-0.1) },
         { type: 'separator' },
         { label: 'Back', accelerator: 'Command+[', click: () => ipcMain.emit('bar-action', null, 'back') },
-        { label: 'Home', accelerator: 'Shift+Command+H', click: () => win.webContents.loadURL(HOME_URL) },
+        { label: 'Home', accelerator: 'Shift+Command+H', click: goHome },
+        { label: 'Open URL…', accelerator: 'Command+L', click: showUrlBar },
         { role: 'reload' },
         { role: 'toggleDevTools' },
       ],
@@ -353,9 +421,36 @@ function trayImage() {
   return img;
 }
 
+function sitesMenu() {
+  const recent = store.get('recentUrls');
+  const home = store.get('homeUrl');
+  return [
+    ...PRESET_SITES.map((s) => ({ label: s.label, click: () => openUrl(s.url) })),
+    { type: 'separator' },
+    {
+      label: 'Recent',
+      enabled: recent.length > 0,
+      submenu: recent.length
+        ? [
+          ...recent.map((u) => ({ label: u.length > 60 ? `${u.slice(0, 57)}…` : u, click: () => openUrl(u) })),
+          { type: 'separator' },
+          { label: 'Clear Recent', click: () => { store.set('recentUrls', []); updateMenus(); } },
+        ]
+        : [{ label: 'None', enabled: false }],
+    },
+    { type: 'separator' },
+    { label: `Home: ${home.replace(/^https?:\/\//, '')}`, enabled: false },
+    { label: 'Set Current Page as Home', click: setCurrentAsHome },
+  ];
+}
+
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: win.isVisible() ? 'Hide' : 'Show', accelerator: 'Alt+Command+Y', click: toggleWindow },
+    { type: 'separator' },
+    { label: 'Open URL…', click: showUrlBar },
+    { label: 'Open URL from Clipboard', accelerator: 'Control+Alt+Command+V', click: openClipboardUrl },
+    { label: 'Sites', submenu: sitesMenu() },
     { type: 'separator' },
     { label: 'Compact Mode', type: 'checkbox', checked: store.get('compact'), click: toggleCompact },
     { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), click: toggleAlwaysOnTop },
@@ -404,9 +499,7 @@ app.whenReady().then(() => {
   tray.setToolTip('MacPiP');
   updateMenus();
 
-  if (!globalShortcut.register('Alt+Command+Y', toggleWindow)) {
-    console.warn('Could not register ⌥⌘Y (already in use by another app).');
-  }
+  registerGlobalShortcuts();
 });
 
 app.on('before-quit', () => {
@@ -414,6 +507,19 @@ app.on('before-quit', () => {
   if (win && !win.isDestroyed()) store.set('bounds', win.getBounds());
   store.flush();
 });
+
+const GLOBAL_SHORTCUTS = [
+  ['Alt+Command+Y', toggleWindow],
+  ['Control+Alt+Command+V', openClipboardUrl],
+];
+
+function registerGlobalShortcuts() {
+  for (const [accel, fn] of GLOBAL_SHORTCUTS) {
+    if (!globalShortcut.register(accel, fn)) {
+      console.warn(`Could not register global shortcut ${accel} (already in use by another app).`);
+    }
+  }
+}
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 
