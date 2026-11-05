@@ -4,19 +4,24 @@
 
 ![MacPiP: YouTube floating over a code editor](docs/social-preview.png)
 
-YouTube in a small, frameless, always-on-top window for macOS. It floats over everything (including full-screen apps and every Space), stays signed in to your own account, and gets out of the way when you're not touching it.
+Picture-in-picture for any website on your Mac. MacPiP puts YouTube (or Twitch, Vimeo, or any page you like) in a small, frameless, always-on-top window. It floats over everything, including full-screen apps and every Space. It stays signed in to your own account and stays out of the way when you're not using it.
 
 Built with Electron and plain JavaScript. There's no frontend framework, no tracking and no updater.
 
 ## Features
 
 - **Floats everywhere:** always on top, including above full-screen apps, and visible on all Spaces.
-- **Stays out of the way:** frameless window with rounded corners and a subtle shadow. A thin drag bar with **Back / Home / Close** appears only when you hover the top edge. Everything else stays clickable, so YouTube's own controls work normally.
-- **Sized for video:** resizable from any edge or corner, minimum 320×180, locked to 16:9 by default (toggleable).
+- **Any website:** press ⌘L (or the ⌕ button) to type a URL or a search. ⌃⌥⌘V opens the URL on your clipboard from any app. There are preset sites, a list of recent URLs, and a home page you can set.
+- **Control playback from any app:** play/pause, skip 10s, mute and change speed without switching to the window. A small indicator shows what happened. Works on any site with an HTML5 video.
+- **Click-through (ghost) mode:** ⌃⌥⌘X makes the window see-through and ignores the mouse, so you can keep working underneath it.
+- **Snap to corners:** ⌃⌥⌘1–4 sends the window to a screen corner, and ⌃⌥⌘= / ⌃⌥⌘- resize it. Drop the window near a screen edge and it snaps into place.
+- **Pauses when hidden:** hiding the window pauses the video, and showing it again resumes.
+- **Stays out of the way:** frameless window with rounded corners and a subtle shadow. A thin drag bar with **Back / Home / Open URL / Close** appears only when you hover the top edge.
+- **Sized for video:** resizable from any edge or corner, with size presets (Small to Extra Large). Locked to 16:9 by default (toggleable).
 - **Remembers itself:** last position and size are restored on launch.
 - **Compact mode:** hides YouTube's header and sidebar. On a video page, the player fills the window.
 - **Adjustable opacity:** from 40% to 100%.
-- **Menu bar app:** tray icon with all the controls. The Dock icon is hidden by default (optional).
+- **Menu bar app:** a menu bar icon with all the controls. The Dock icon is hidden by default (optional).
 - **Stays signed in:** persistent session, so you sign in once.
 
 ## Screenshots
@@ -29,20 +34,37 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 
 ## Keyboard shortcuts
 
+**Global** (work from any app):
+
 | Shortcut | Action |
 |---|---|
-| ⌥⌘Y | Show / hide the window (works from any app) |
+| ⌥⌘Y | Show / hide the window |
+| ⌃⌥⌘V | Open the URL on the clipboard |
+| ⌃⌥⌘X | Turn click-through mode on / off |
+| ⌃⌥⌘Space | Play / pause |
+| ⌃⌥⌘← / ⌃⌥⌘→ | Back / forward 10 seconds |
+| ⌃⌥⌘M | Mute / unmute |
+| ⌃⌥⌘[ / ⌃⌥⌘] | Slower / faster (0.5× to 3×) |
+| ⌃⌥⌘0 | Normal speed |
+| ⌃⌥⌘1 / 2 / 3 / 4 | Move to top-left / top-right / bottom-left / bottom-right |
+| ⌃⌥⌘= / ⌃⌥⌘- | Bigger / smaller |
+
+**When MacPiP is the active app:**
+
+| Shortcut | Action |
+|---|---|
+| ⌘L | Open URL / search |
 | ⌥⌘T | Toggle always-on-top |
 | ⌥⌘↑ / ⌥⌘↓ | Opacity up / down |
 | ⌥⌘C | Toggle compact mode |
 | ⌘[ | Back |
-| ⇧⌘H | YouTube home |
+| ⇧⌘H | Home |
 
-Only ⌥⌘Y is global. The rest work while MacPiP is the active app.
+If another app already uses one of the global shortcuts, MacPiP logs a warning and skips it.
 
 ## Menu bar icon
 
-Show/Hide · Compact Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Reset Window Position · Sign in with Google (separate window) · Quit
+Show/Hide · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Playback · Position & Size · Sign in with Google (separate window) · Quit
 
 Close (in the drag bar) hides the window to the menu bar. Use **Quit** to exit.
 
@@ -109,8 +131,8 @@ Google may change its checks at any time, so this can break without warning.
 | File | Purpose |
 |---|---|
 | `src/main.js` | Main process: window, shortcuts, tray, cursor polling for the drag bar, sign-in window |
-| `src/preload.js` | Injected into YouTube: creates the drag bar and toggles compact mode |
-| `src/inject.css` | Drag bar and compact-mode styles |
+| `src/preload.js` | Injected into every page: drag bar, URL bar, media controls and their indicator, compact mode |
+| `src/inject.css` | Drag bar, URL bar, indicator and compact-mode styles |
 | `src/signin-preload.js` | Makes the sign-in window look consistently like Firefox |
 | `src/store.js` | Tiny JSON settings store |
 | `build/adhoc-sign.js` | Post-package hook that ad-hoc signs the `.app` |
@@ -123,11 +145,12 @@ The drag bar is shown by polling the cursor position from the main process. Fram
 
 - macOS only.
 - Compact mode relies on YouTube's current page structure and may need updating when YouTube changes its layout.
-- Out of scope: ad blocking, downloading videos, multiple windows, Windows/Linux builds, auto-updates.
+- DRM-protected streaming sites (Netflix, Prime Video, Disney+) won't play, because stock Electron doesn't include the Widevine DRM module.
+- Media controls only reach videos on the main page, not videos embedded in iframes.
 
 ## Disclaimer
 
-Not affiliated with, endorsed by, or sponsored by YouTube or Google. YouTube is a trademark of Google LLC. This is a personal wrapper around the regular youtube.com website. Use it in line with YouTube's Terms of Service.
+Not affiliated with, endorsed by, or sponsored by YouTube or Google. YouTube is a trademark of Google LLC. This is a personal wrapper around regular websites. Use it in line with YouTube's Terms of Service.
 
 ## License
 
