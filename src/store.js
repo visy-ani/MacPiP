@@ -14,6 +14,7 @@ const DEFAULTS = {
   recentUrls: [],
   ghostOpacity: 0.5,
   snapToEdges: true,
+  pauseWhenHidden: true,
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

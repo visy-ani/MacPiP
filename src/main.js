@@ -69,6 +69,8 @@ let quitting = false;
 // Click-through ("ghost") mode: the window ignores the mouse and goes translucent.
 // Not persisted, so a relaunch never leaves you with a window you can't click.
 let clickThrough = false;
+// Set when hiding the window paused a playing video, so showing it again resumes playback.
+let resumeOnShow = false;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -183,8 +185,22 @@ function createWindow() {
       win.hide();
     }
   });
-  win.on('show', updateTrayMenu);
-  win.on('hide', updateTrayMenu);
+  win.on('show', () => {
+    updateTrayMenu();
+    if (resumeOnShow) {
+      resumeOnShow = false;
+      sendMedia('play');
+    }
+  });
+  win.on('hide', async () => {
+    updateTrayMenu();
+    if (store.get('pauseWhenHidden') && !quitting) {
+      const wasPlaying = await sendMedia('pause');
+      // The window may have come back while we waited for the page.
+      if (wasPlaying && !win.isVisible()) resumeOnShow = true;
+      else if (wasPlaying) sendMedia('play');
+    }
+  });
 
   win.once('ready-to-show', () => win.show());
   win.loadURL(store.get('homeUrl'));
@@ -343,13 +359,23 @@ ipcMain.on('media-reply', (_e, id, wasPlaying) => {
   if (done) done(wasPlaying);
 });
 
+function togglePauseWhenHidden() {
+  store.set('pauseWhenHidden', !store.get('pauseWhenHidden'));
+  if (!store.get('pauseWhenHidden')) resumeOnShow = false;
+  updateMenus();
+}
+
 function mediaMenu() {
-  return MEDIA_SHORTCUTS.map((m) => ({
-    label: m.label,
-    accelerator: m.accel,
-    registerAccelerator: false,
-    click: () => sendMedia(m.action),
-  }));
+  return [
+    ...MEDIA_SHORTCUTS.map((m) => ({
+      label: m.label,
+      accelerator: m.accel,
+      registerAccelerator: false,
+      click: () => sendMedia(m.action),
+    })),
+    { type: 'separator' },
+    { label: 'Pause When Hidden', type: 'checkbox', checked: store.get('pauseWhenHidden'), click: togglePauseWhenHidden },
+  ];
 }
 
 function toggleWindow() {
