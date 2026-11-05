@@ -313,6 +313,45 @@ ipcMain.on('bar-action', (_e, action) => {
 
 ipcMain.on('open-url', (_e, input) => openUrl(input));
 
+const MEDIA_SHORTCUTS = [
+  { label: 'Play / Pause', action: 'play-pause', accel: 'Control+Alt+Command+Space' },
+  { label: 'Back 10 Seconds', action: 'seek-back', accel: 'Control+Alt+Command+Left' },
+  { label: 'Forward 10 Seconds', action: 'seek-forward', accel: 'Control+Alt+Command+Right' },
+  { label: 'Mute / Unmute', action: 'mute', accel: 'Control+Alt+Command+M' },
+  { label: 'Faster', action: 'speed-up', accel: 'Control+Alt+Command+]' },
+  { label: 'Slower', action: 'speed-down', accel: 'Control+Alt+Command+[' },
+  { label: 'Normal Speed', action: 'speed-reset', accel: 'Control+Alt+Command+0' },
+];
+
+let mediaReplyId = 0;
+const mediaReplies = new Map();
+
+// Ask the page to run a media action. Resolves to whether a video was playing beforehand.
+function sendMedia(action) {
+  if (!win || win.isDestroyed()) return Promise.resolve(false);
+  const id = ++mediaReplyId;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { mediaReplies.delete(id); resolve(false); }, 1000);
+    mediaReplies.set(id, (wasPlaying) => { clearTimeout(timer); resolve(wasPlaying); });
+    win.webContents.send('media', action, id);
+  });
+}
+
+ipcMain.on('media-reply', (_e, id, wasPlaying) => {
+  const done = mediaReplies.get(id);
+  mediaReplies.delete(id);
+  if (done) done(wasPlaying);
+});
+
+function mediaMenu() {
+  return MEDIA_SHORTCUTS.map((m) => ({
+    label: m.label,
+    accelerator: m.accel,
+    registerAccelerator: false,
+    click: () => sendMedia(m.action),
+  }));
+}
+
 function toggleWindow() {
   if (win.isVisible()) {
     win.hide();
@@ -533,6 +572,7 @@ function buildAppMenu() {
         { label: 'Home', accelerator: 'Shift+Command+H', click: goHome },
         { label: 'Open URL…', accelerator: 'Command+L', click: showUrlBar },
         { type: 'separator' },
+        { label: 'Playback', submenu: mediaMenu() },
         { label: 'Position & Size', submenu: positionMenu() },
         { type: 'separator' },
         { role: 'reload' },
@@ -585,6 +625,7 @@ function buildTrayMenu() {
     { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
     { label: 'Show Dock Icon', type: 'checkbox', checked: store.get('showInDock'), click: toggleDock },
     { type: 'separator' },
+    { label: 'Playback', submenu: mediaMenu() },
     { label: 'Position & Size', submenu: positionMenu() },
     { label: 'Sign in with Google (separate window)…', click: () => openSigninWindow() },
     { type: 'separator' },
@@ -643,6 +684,7 @@ const GLOBAL_SHORTCUTS = [
   ...CORNERS.map((c) => [`Control+Alt+Command+${c.key}`, () => moveToCorner(c.id)]),
   ['Control+Alt+Command+=', () => scaleWindow(1.15)],
   ['Control+Alt+Command+-', () => scaleWindow(1 / 1.15)],
+  ...MEDIA_SHORTCUTS.map((m) => [m.accel, () => sendMedia(m.action)]),
 ];
 
 function registerGlobalShortcuts() {

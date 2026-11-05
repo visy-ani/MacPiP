@@ -70,6 +70,74 @@ function showUrlBar(currentUrl) {
 
 ipcRenderer.on('url-bar', (_e, currentUrl) => showUrlBar(currentUrl));
 
+// ---- Media controls (driven by global shortcuts in the main process) ----
+
+const TOAST_ID = 'macpip-toast';
+let toastTimer = null;
+
+function toast(text) {
+  if (!document.body) return;
+  let el = document.getElementById(TOAST_ID);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = TOAST_ID;
+    document.body.append(el);
+  }
+  el.textContent = text;
+  el.classList.add('macpip-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('macpip-show'), 900);
+}
+
+// The video that matters: one that's playing, otherwise the biggest one on the page.
+function findVideo() {
+  const videos = [...document.querySelectorAll('video')];
+  if (!videos.length) return null;
+  const playing = videos.find((v) => !v.paused && !v.ended && v.readyState > 2);
+  if (playing) return playing;
+  const area = (v) => { const r = v.getBoundingClientRect(); return r.width * r.height; };
+  return videos.sort((a, b) => area(b) - area(a))[0];
+}
+
+function fmtTime(t) {
+  if (!Number.isFinite(t)) return '';
+  const s = Math.floor(t % 60).toString().padStart(2, '0');
+  const m = Math.floor(t / 60) % 60;
+  const h = Math.floor(t / 3600);
+  return h ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+const mediaActions = {
+  'play-pause': (v) => {
+    if (v.paused) { v.play(); toast('▶'); } else { v.pause(); toast('❚❚'); }
+  },
+  pause: (v) => { if (!v.paused) v.pause(); },
+  play: (v) => { if (v.paused) v.play(); },
+  'seek-back': (v) => { v.currentTime = Math.max(0, v.currentTime - 10); toast(`« 10s  ${fmtTime(v.currentTime)}`); },
+  'seek-forward': (v) => { v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10); toast(`10s »  ${fmtTime(v.currentTime)}`); },
+  mute: (v) => { v.muted = !v.muted; toast(v.muted ? 'Muted' : 'Sound on'); },
+  'speed-up': (v) => {
+    v.playbackRate = SPEEDS.find((s) => s > v.playbackRate + 0.01) ?? SPEEDS[SPEEDS.length - 1];
+    toast(`${v.playbackRate}×`);
+  },
+  'speed-down': (v) => {
+    v.playbackRate = [...SPEEDS].reverse().find((s) => s < v.playbackRate - 0.01) ?? SPEEDS[0];
+    toast(`${v.playbackRate}×`);
+  },
+  'speed-reset': (v) => { v.playbackRate = 1; toast('1×'); },
+};
+
+// Replies with whether a video was playing before the action, so "pause when hidden" can resume later.
+ipcRenderer.on('media', (_e, action, replyId) => {
+  const v = findVideo();
+  const wasPlaying = !!v && !v.paused && !v.ended;
+  if (v && mediaActions[action]) mediaActions[action](v);
+  else if (!v && action !== 'pause' && action !== 'play') toast('No video on this page');
+  if (replyId) ipcRenderer.send('media-reply', replyId, wasPlaying);
+});
+
 // Main process polls the cursor and tells us when it's over the top strip.
 ipcRenderer.on('bar-visible', (_e, visible) => {
   ensureBar();

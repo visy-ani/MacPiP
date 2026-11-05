@@ -103,3 +103,25 @@ html[data-macpip-compact] ytd-watch-flexy:not([hidden]) #movie_player video {
 #macpip-urlbar input::placeholder {
   color: rgba(255, 255, 255, 0.45) !important;
 }
+
+/* On-screen indicator for media shortcuts. */
+#macpip-toast {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) scale(0.96) !important;
+  padding: 8px 16px !important;
+  font: 600 15px -apple-system, BlinkMacSystemFont, sans-serif !important;
+  color: #fff !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  border-radius: 10px !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s ease, transform 0.15s ease !important;
+  white-space: nowrap !important;
+}
+#macpip-toast.macpip-show {
+  opacity: 1 !important;
+  transform: translate(-50%, -50%) scale(1) !important;
+}
