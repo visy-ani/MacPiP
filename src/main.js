@@ -71,6 +71,8 @@ let quitting = false;
 let clickThrough = false;
 // Set when hiding the window paused a playing video, so showing it again resumes playback.
 let resumeOnShow = false;
+// Animated moves fire 'moved' on every frame; ignore those so edge snapping doesn't fight them.
+let ignoreMovedUntil = 0;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -465,9 +467,14 @@ function boundsAtCorner(corner, width, height, a) {
   };
 }
 
+function animateBounds(bounds) {
+  ignoreMovedUntil = Date.now() + 600;
+  win.setBounds(bounds, true);
+}
+
 function moveToCorner(corner) {
   const b = win.getBounds();
-  win.setBounds(boundsAtCorner(corner, b.width, b.height, workAreaFor(b)), true);
+  animateBounds(boundsAtCorner(corner, b.width, b.height, workAreaFor(b)));
   if (!win.isVisible()) win.showInactive();
   store.set('bounds', win.getBounds());
 }
@@ -479,7 +486,7 @@ function resizeToWidth(width) {
   const w = Math.round(Math.min(a.width - 2 * EDGE_MARGIN, Math.max(MIN_W, width)));
   let h = store.get('lockAspect') ? Math.round(w * 9 / 16) : Math.round(b.height * w / b.width);
   h = Math.min(a.height - 2 * EDGE_MARGIN, Math.max(MIN_H, h));
-  win.setBounds(boundsAtCorner(nearestCorner(b), w, h, a), true);
+  animateBounds(boundsAtCorner(nearestCorner(b), w, h, a));
   store.set('bounds', win.getBounds());
 }
 
@@ -489,7 +496,7 @@ function scaleWindow(factor) {
 
 // After a drag, pull the window onto any screen edge it was dropped close to.
 function snapToEdges() {
-  if (!store.get('snapToEdges') || win.isDestroyed()) return;
+  if (!store.get('snapToEdges') || win.isDestroyed() || Date.now() < ignoreMovedUntil) return;
   const b = win.getBounds();
   const a = workAreaFor(b);
   let { x, y } = b;
@@ -497,7 +504,7 @@ function snapToEdges() {
   else if (Math.abs(a.x + a.width - (b.x + b.width)) < SNAP_DISTANCE) x = a.x + a.width - b.width - EDGE_MARGIN;
   if (Math.abs(b.y - a.y) < SNAP_DISTANCE) y = a.y + EDGE_MARGIN;
   else if (Math.abs(a.y + a.height - (b.y + b.height)) < SNAP_DISTANCE) y = a.y + a.height - b.height - EDGE_MARGIN;
-  if (x !== b.x || y !== b.y) win.setPosition(x, y, true);
+  if (x !== b.x || y !== b.y) animateBounds({ ...b, x, y });
 }
 
 function toggleSnapToEdges() {
