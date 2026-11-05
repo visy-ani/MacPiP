@@ -29,6 +29,20 @@ const PARTITION = 'persist:macpip';
 const MIN_W = 320;
 const MIN_H = 180;
 const BAR_HEIGHT = 24;
+const EDGE_MARGIN = 16; // gap kept between the window and the screen edge when snapped
+const SNAP_DISTANCE = 40; // drop the window this close to an edge and it snaps
+const SIZE_PRESETS = [
+  { label: 'Small', width: 320 },
+  { label: 'Medium', width: 480 },
+  { label: 'Large', width: 640 },
+  { label: 'Extra Large', width: 854 },
+];
+const CORNERS = [
+  { id: 'top-left', label: 'Top Left', key: '1' },
+  { id: 'top-right', label: 'Top Right', key: '2' },
+  { id: 'bottom-left', label: 'Bottom Left', key: '3' },
+  { id: 'bottom-right', label: 'Bottom Right', key: '4' },
+];
 
 // Present as regular desktop Chrome (no "Electron"/app tokens) so Google sign-in isn't blocked.
 const CHROME_UA =
@@ -156,7 +170,10 @@ function createWindow() {
   const saveBounds = () => {
     if (!win.isDestroyed()) store.set('bounds', win.getBounds());
   };
-  win.on('moved', saveBounds);
+  win.on('moved', () => {
+    snapToEdges();
+    saveBounds();
+  });
   win.on('resized', saveBounds);
 
   win.on('close', (e) => {
@@ -361,6 +378,89 @@ function toggleDock() {
   if (win.isVisible()) win.show();
 }
 
+function workAreaFor(b) {
+  return screen.getDisplayMatching(b).workArea;
+}
+
+// Which screen corner the window is closest to, e.g. "bottom-right".
+function nearestCorner(b) {
+  const a = workAreaFor(b);
+  const v = b.y + b.height / 2 < a.y + a.height / 2 ? 'top' : 'bottom';
+  const h = b.x + b.width / 2 < a.x + a.width / 2 ? 'left' : 'right';
+  return `${v}-${h}`;
+}
+
+function boundsAtCorner(corner, width, height, a) {
+  const [v, h] = corner.split('-');
+  return {
+    width,
+    height,
+    x: h === 'left' ? a.x + EDGE_MARGIN : a.x + a.width - width - EDGE_MARGIN,
+    y: v === 'top' ? a.y + EDGE_MARGIN : a.y + a.height - height - EDGE_MARGIN,
+  };
+}
+
+function moveToCorner(corner) {
+  const b = win.getBounds();
+  win.setBounds(boundsAtCorner(corner, b.width, b.height, workAreaFor(b)), true);
+  if (!win.isVisible()) win.showInactive();
+  store.set('bounds', win.getBounds());
+}
+
+// Resize to a given width, keeping the window pinned to its nearest corner.
+function resizeToWidth(width) {
+  const b = win.getBounds();
+  const a = workAreaFor(b);
+  const w = Math.round(Math.min(a.width - 2 * EDGE_MARGIN, Math.max(MIN_W, width)));
+  let h = store.get('lockAspect') ? Math.round(w * 9 / 16) : Math.round(b.height * w / b.width);
+  h = Math.min(a.height - 2 * EDGE_MARGIN, Math.max(MIN_H, h));
+  win.setBounds(boundsAtCorner(nearestCorner(b), w, h, a), true);
+  store.set('bounds', win.getBounds());
+}
+
+function scaleWindow(factor) {
+  resizeToWidth(win.getBounds().width * factor);
+}
+
+// After a drag, pull the window onto any screen edge it was dropped close to.
+function snapToEdges() {
+  if (!store.get('snapToEdges') || win.isDestroyed()) return;
+  const b = win.getBounds();
+  const a = workAreaFor(b);
+  let { x, y } = b;
+  if (Math.abs(b.x - a.x) < SNAP_DISTANCE) x = a.x + EDGE_MARGIN;
+  else if (Math.abs(a.x + a.width - (b.x + b.width)) < SNAP_DISTANCE) x = a.x + a.width - b.width - EDGE_MARGIN;
+  if (Math.abs(b.y - a.y) < SNAP_DISTANCE) y = a.y + EDGE_MARGIN;
+  else if (Math.abs(a.y + a.height - (b.y + b.height)) < SNAP_DISTANCE) y = a.y + a.height - b.height - EDGE_MARGIN;
+  if (x !== b.x || y !== b.y) win.setPosition(x, y, true);
+}
+
+function toggleSnapToEdges() {
+  store.set('snapToEdges', !store.get('snapToEdges'));
+  updateMenus();
+}
+
+function positionMenu() {
+  return [
+    ...CORNERS.map((c) => ({
+      label: c.label,
+      accelerator: `Control+Alt+Command+${c.key}`,
+      registerAccelerator: false,
+      click: () => moveToCorner(c.id),
+    })),
+    { type: 'separator' },
+    ...SIZE_PRESETS.map((p) => ({
+      label: `${p.label} (${p.width}×${Math.round(p.width * 9 / 16)})`,
+      click: () => resizeToWidth(p.width),
+    })),
+    { label: 'Bigger', accelerator: 'Control+Alt+Command+=', registerAccelerator: false, click: () => scaleWindow(1.15) },
+    { label: 'Smaller', accelerator: 'Control+Alt+Command+-', registerAccelerator: false, click: () => scaleWindow(1 / 1.15) },
+    { type: 'separator' },
+    { label: 'Snap to Screen Edges', type: 'checkbox', checked: store.get('snapToEdges'), click: toggleSnapToEdges },
+    { label: 'Reset Window Position', click: resetPosition },
+  ];
+}
+
 function resetPosition() {
   win.setBounds(defaultBounds());
   store.set('bounds', win.getBounds());
@@ -432,6 +532,9 @@ function buildAppMenu() {
         { label: 'Back', accelerator: 'Command+[', click: () => ipcMain.emit('bar-action', null, 'back') },
         { label: 'Home', accelerator: 'Shift+Command+H', click: goHome },
         { label: 'Open URL…', accelerator: 'Command+L', click: showUrlBar },
+        { type: 'separator' },
+        { label: 'Position & Size', submenu: positionMenu() },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
       ],
@@ -482,7 +585,7 @@ function buildTrayMenu() {
     { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
     { label: 'Show Dock Icon', type: 'checkbox', checked: store.get('showInDock'), click: toggleDock },
     { type: 'separator' },
-    { label: 'Reset Window Position', click: resetPosition },
+    { label: 'Position & Size', submenu: positionMenu() },
     { label: 'Sign in with Google (separate window)…', click: () => openSigninWindow() },
     { type: 'separator' },
     { label: 'Quit MacPiP', accelerator: 'Command+Q', click: () => app.quit() },
@@ -537,6 +640,9 @@ const GLOBAL_SHORTCUTS = [
   ['Alt+Command+Y', toggleWindow],
   ['Control+Alt+Command+V', openClipboardUrl],
   ['Control+Alt+Command+X', toggleClickThrough],
+  ...CORNERS.map((c) => [`Control+Alt+Command+${c.key}`, () => moveToCorner(c.id)]),
+  ['Control+Alt+Command+=', () => scaleWindow(1.15)],
+  ['Control+Alt+Command+-', () => scaleWindow(1 / 1.15)],
 ];
 
 function registerGlobalShortcuts() {

@@ -13,6 +13,7 @@ const DEFAULTS = {
   homeUrl: 'https://www.youtube.com',
   recentUrls: [],
   ghostOpacity: 0.5,
+  snapToEdges: true,
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
