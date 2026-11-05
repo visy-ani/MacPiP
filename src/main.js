@@ -52,6 +52,9 @@ let signinWin = null;
 let barVisible = false;
 let barHideTimer = null;
 let quitting = false;
+// Click-through ("ghost") mode: the window ignores the mouse and goes translucent.
+// Not persisted, so a relaunch never leaves you with a window you can't click.
+let clickThrough = false;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -118,7 +121,7 @@ function createWindow() {
 
   applyAlwaysOnTop(store.get('alwaysOnTop'));
   applyAspect(store.get('lockAspect'));
-  win.setOpacity(store.get('opacity'));
+  applyOpacity();
 
   const wc = win.webContents;
   wc.setUserAgent(CHROME_UA);
@@ -251,6 +254,10 @@ function isSigninUrl(url) {
 function startHoverWatcher() {
   setInterval(() => {
     if (!win || win.isDestroyed() || !win.isVisible()) return;
+    if (clickThrough) {
+      setBarVisible(false);
+      return;
+    }
     const p = screen.getCursorScreenPoint();
     const b = win.getBounds();
     const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
@@ -305,10 +312,26 @@ function toggleAlwaysOnTop() {
   updateMenus();
 }
 
+function applyOpacity() {
+  const base = store.get('opacity');
+  win.setOpacity(clickThrough ? Math.min(base, store.get('ghostOpacity')) : base);
+}
+
 function changeOpacity(delta) {
   const next = Math.round(Math.min(1, Math.max(0.4, store.get('opacity') + delta)) * 100) / 100;
   store.set('opacity', next);
-  win.setOpacity(next);
+  applyOpacity();
+}
+
+function toggleClickThrough() {
+  clickThrough = !clickThrough;
+  win.setIgnoreMouseEvents(clickThrough);
+  // A focused window would still swallow key presses meant for the app underneath.
+  if (clickThrough) win.blur();
+  applyOpacity();
+  if (clickThrough && !win.isVisible()) win.showInactive();
+  if (tray) tray.setToolTip(clickThrough ? 'MacPiP (click-through: ⌃⌥⌘X to exit)' : 'MacPiP');
+  updateMenus();
 }
 
 function toggleCompact() {
@@ -400,6 +423,7 @@ function buildAppMenu() {
       submenu: [
         { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), accelerator: 'Alt+Command+T', click: toggleAlwaysOnTop },
         { label: 'Compact Mode', type: 'checkbox', checked: store.get('compact'), accelerator: 'Alt+Command+C', click: toggleCompact },
+        { label: 'Click-Through Mode', type: 'checkbox', checked: clickThrough, accelerator: 'Control+Alt+Command+X', registerAccelerator: false, click: toggleClickThrough },
         { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
         { type: 'separator' },
         { label: 'Increase Opacity', accelerator: 'Alt+Command+Up', click: () => changeOpacity(0.1) },
@@ -453,6 +477,7 @@ function buildTrayMenu() {
     { label: 'Sites', submenu: sitesMenu() },
     { type: 'separator' },
     { label: 'Compact Mode', type: 'checkbox', checked: store.get('compact'), click: toggleCompact },
+    { label: 'Click-Through Mode', type: 'checkbox', checked: clickThrough, accelerator: 'Control+Alt+Command+X', click: toggleClickThrough },
     { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), click: toggleAlwaysOnTop },
     { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
     { label: 'Show Dock Icon', type: 'checkbox', checked: store.get('showInDock'), click: toggleDock },
@@ -511,6 +536,7 @@ app.on('before-quit', () => {
 const GLOBAL_SHORTCUTS = [
   ['Alt+Command+Y', toggleWindow],
   ['Control+Alt+Command+V', openClipboardUrl],
+  ['Control+Alt+Command+X', toggleClickThrough],
 ];
 
 function registerGlobalShortcuts() {

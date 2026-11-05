@@ -12,6 +12,7 @@ const DEFAULTS = {
   showInDock: false,
   homeUrl: 'https://www.youtube.com',
   recentUrls: [],
+  ghostOpacity: 0.5,
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
