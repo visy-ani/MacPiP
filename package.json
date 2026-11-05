@@ -1,13 +1,14 @@
 {
-  "name": "yt-float",
+  "name": "macpip",
   "productName": "YT Float",
   "version": "1.0.0",
   "description": "YouTube in a floating, always-on-top window",
-  "author": "Gaurav Dadhich",
+  "author": "Anish Yadav",
+  "contributors": ["Gaurav Dadhich (original YT Float)"],
   "license": "Unlicense",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dadhichgaurav1/yt_float.git"
+    "url": "git+https://github.com/visy-ani/MacPiP.git"
   },
   "main": "src/main.js",
   "private": true,

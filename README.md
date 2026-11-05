@@ -1,4 +1,6 @@
-# YT Float
+# MacPiP
+
+> Based on [YT Float](https://github.com/dadhichgaurav1/yt_float) by Gaurav Dadhich. Thanks for the great foundation!
 
 ![YT Float: YouTube floating over a code editor](docs/social-preview.png)
 
