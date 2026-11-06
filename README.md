@@ -17,7 +17,7 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 - **Click-through (ghost) mode:** ⌃⌥⌘X makes the window see-through and ignores the mouse, so you can keep working underneath it.
 - **Snap to corners:** ⌃⌥⌘1–4 sends the window to a screen corner, and ⌃⌥⌘= / ⌃⌥⌘- resize it. Drop the window near a screen edge and it snaps into place.
 - **Pauses when hidden:** hiding the window pauses the video, and showing it again resumes.
-- **Stays out of the way:** frameless window with rounded corners and a subtle shadow. A thin drag bar with **Back / Home / Open URL / Close** appears only when you hover the top edge.
+- **Stays out of the way:** frameless window with rounded corners and a subtle shadow. A thin drag bar with **Back / Home / Open URL / YouTube / New Window / Close** appears only when you hover the top edge. The YouTube button opens YouTube in its own 16:9 window beside the current page, or brings an open YouTube window forward.
 - **Sized for video:** resizable from any edge or corner, with size presets (Small to Extra Large). Locked to 16:9 by default (toggleable).
 - **Remembers itself:** last position and size are restored on launch.
 - **Compact mode:** hides YouTube's header and sidebar. On a video page, the player fills the window.
@@ -57,6 +57,7 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 |---|---|
 | ⌘L | Open URL / search (⇧↩ opens it in a new window) |
 | ⌘N | New window |
+| ⌘Y | Open YouTube (in a video window beside the current one) |
 | ⌘W | Close window (the main window just hides) |
 | ⌥⌘T | Toggle always-on-top |
 | ⌥⌘↑ / ⌥⌘↓ | Opacity up / down |
@@ -70,7 +71,7 @@ Right-click anywhere in a page for links (open in a new window, open in browser,
 
 ## Menu bar icon
 
-Show/Hide · New Window · New Window from Clipboard · Close Extra Windows · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Open at Login · Playback · Position & Size · Sign in with Google (separate window) · Quit
+Show/Hide · New Window · Open YouTube · New Window from Clipboard · Close Extra Windows · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Open at Login · Playback · Position & Size · Sign in with Google (separate window) · Quit
 
 Close (in the drag bar) hides the window to the menu bar. Use **Quit** to exit.
 

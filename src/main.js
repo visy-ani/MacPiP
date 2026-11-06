@@ -30,6 +30,8 @@ const MIN_W = 320;
 const MIN_H = 180;
 // Extra windows default to a taller shape that suits articles and docs.
 const READER_SIZE = { width: 460, height: 680 };
+const VIDEO_SIZE = { width: 480, height: 270 };
+const YOUTUBE_URL = 'https://www.youtube.com';
 const NEW_WINDOW_PAGE = path.join(__dirname, 'newtab.html');
 const BAR_HEIGHT = 24;
 const EDGE_MARGIN = 16; // gap kept between the window and the screen edge when snapped
@@ -104,11 +106,13 @@ function defaultBounds() {
 }
 
 // Put a new window beside the active one (left if there's room, else right), bottom-aligned.
-function newWindowBounds() {
+// "reader" is tall for articles; "video" is a small 16:9 player.
+function newWindowBounds(shape = 'reader') {
   const ref = active().win.getBounds();
   const a = workAreaFor(ref);
-  const width = Math.min(READER_SIZE.width, a.width - 2 * EDGE_MARGIN);
-  const height = Math.min(READER_SIZE.height, a.height - 2 * EDGE_MARGIN);
+  const size = shape === 'video' ? VIDEO_SIZE : READER_SIZE;
+  const width = Math.min(size.width, a.width - 2 * EDGE_MARGIN);
+  const height = Math.min(size.height, a.height - 2 * EDGE_MARGIN);
   let x;
   if (ref.x - width - EDGE_MARGIN >= a.x + EDGE_MARGIN) x = ref.x - width - EDGE_MARGIN;
   else if (ref.x + ref.width + EDGE_MARGIN + width <= a.x + a.width - EDGE_MARGIN) x = ref.x + ref.width + EDGE_MARGIN;
@@ -149,13 +153,13 @@ function applyDock(show) {
   else app.dock.hide();
 }
 
-function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLoad = false } = {}) {
+function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLoad = false, shape = 'reader' } = {}) {
   let b = bounds;
   if (!b && isMain) {
     const saved = store.get('bounds');
     b = saved && boundsAreVisible(saved) ? saved : defaultBounds();
   }
-  if (!b) b = newWindowBounds();
+  if (!b) b = newWindowBounds(shape);
 
   const win = new BrowserWindow({
     ...b,
@@ -181,7 +185,7 @@ function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLo
   const f = {
     win,
     isMain,
-    lockAspect: isMain ? store.get('lockAspect') : false,
+    lockAspect: isMain ? store.get('lockAspect') : shape === 'video',
     barVisible: false,
     barHideTimer: null,
     snapTimer: null, // pending edge snap, run once a drag has stopped
@@ -299,6 +303,31 @@ function newWindow(input) {
   activeFloat = f;
   updateMenus();
   return f;
+}
+
+function isYouTube(f) {
+  try {
+    return /(^|\.)youtube\.com$/.test(new URL(f.win.webContents.getURL()).hostname);
+  } catch {
+    return false;
+  }
+}
+
+// The YouTube button: from a YouTube window, go to YouTube home; otherwise bring forward an
+// existing YouTube window, or open one in a 16:9 video window beside the current one.
+function openYouTube(from = active()) {
+  if (from && isYouTube(from)) {
+    from.win.webContents.loadURL(YOUTUBE_URL);
+    return;
+  }
+  const existing = [...floats].find((f) => !f.win.isDestroyed() && isYouTube(f));
+  if (existing) {
+    existing.win.show();
+    existing.win.focus();
+    return;
+  }
+  activeFloat = createFloat({ url: YOUTUBE_URL, shape: 'video' });
+  updateMenus();
 }
 
 function newWindowFromClipboard() {
@@ -473,6 +502,8 @@ ipcMain.on('bar-action', (e, action) => {
     goHome(f);
   } else if (action === 'url') {
     showUrlBar(f);
+  } else if (action === 'youtube') {
+    openYouTube(f);
   } else if (action === 'new') {
     newWindow();
   } else if (action === 'close') {
@@ -802,6 +833,7 @@ function buildAppMenu() {
       label: 'File',
       submenu: [
         { label: 'New Window', accelerator: 'Command+N', click: () => newWindow() },
+        { label: 'Open YouTube', accelerator: 'Command+Y', click: () => openYouTube() },
         { label: 'New Window from Clipboard', accelerator: 'Control+Alt+Command+N', registerAccelerator: false, click: newWindowFromClipboard },
         { label: 'Open URL…', accelerator: 'Command+L', click: () => showUrlBar() },
         { type: 'separator' },
@@ -869,6 +901,7 @@ function buildTrayMenu() {
     { label: anyVisible() ? 'Hide' : 'Show', accelerator: 'Alt+Command+Y', click: toggleWindow },
     { type: 'separator' },
     { label: 'New Window', click: () => newWindow() },
+    { label: 'Open YouTube', click: () => openYouTube() },
     { label: 'New Window from Clipboard', accelerator: 'Control+Alt+Command+N', click: newWindowFromClipboard },
     { label: `Close Extra Windows (${extras})`, enabled: extras > 0, click: closeExtraWindows },
     { type: 'separator' },

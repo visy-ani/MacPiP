@@ -1,13 +1,32 @@
-// Injected into every page the main window loads (YouTube and Google sign-in).
-// Adds the hover drag bar and the compact-mode flag. Runs in an isolated world.
+// Injected into every page a float window loads. Adds the hover drag bar, URL bar, media
+// controls and the compact-mode flag. Runs in an isolated world.
 const { ipcRenderer } = require('electron');
 
 const BAR_ID = 'macpip-dragbar';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Small red play badge for the YouTube button. Built with DOM calls, not innerHTML, because
+// YouTube enforces Trusted Types.
+function youtubeGlyph() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 14');
+  svg.setAttribute('width', '17');
+  svg.setAttribute('height', '12');
+  const badge = document.createElementNS(SVG_NS, 'rect');
+  for (const [k, v] of Object.entries({ x: 0, y: 0, width: 20, height: 14, rx: 4, fill: '#ff0033' })) badge.setAttribute(k, v);
+  const play = document.createElementNS(SVG_NS, 'path');
+  play.setAttribute('d', 'M8 4 L13.5 7 L8 10 Z');
+  play.setAttribute('fill', '#fff');
+  svg.append(badge, play);
+  return svg;
+}
+
 function makeButton(label, title, action) {
   const b = document.createElement('button');
   b.className = 'macpip-btn';
-  b.textContent = label;
+  if (typeof label === 'string') b.textContent = label;
+  else b.append(label);
   b.title = title;
   b.addEventListener('click', (e) => {
     e.preventDefault();
@@ -27,6 +46,7 @@ function ensureBar() {
     makeButton('‹', 'Back', 'back'),
     makeButton('⌂', 'Home', 'home'),
     makeButton('⌕', 'Open URL (⌘L)', 'url'),
+    makeButton(youtubeGlyph(), 'YouTube (⌘Y)', 'youtube'),
     makeButton('+', 'New Window (⌘N)', 'new'),
     makeButton('✕', 'Close', 'close'),
   );
