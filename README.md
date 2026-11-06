@@ -151,6 +151,7 @@ Google may change its checks at any time, so this can break without warning.
 | `src/inject.css` | Drag bar, URL bar, indicator and compact-mode styles |
 | `src/signin-preload.js` | Makes the sign-in window look consistently like Firefox |
 | `src/store.js` | Tiny JSON settings store |
+| `scripts/make-icons.py` | Draws the app icon and menu bar icon (`python3 scripts/make-icons.py --preview out.png` to compare color themes) |
 | `build/adhoc-sign.js` | Post-package hook that ad-hoc signs the `.app` |
 
 Settings and the login session live in `~/Library/Application Support/MacPiP/`. Delete that folder to reset everything.
