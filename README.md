@@ -12,6 +12,7 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 
 - **Floats everywhere:** always on top, including above full-screen apps, and visible on all Spaces.
 - **Any website:** press ⌘L (or the ⌕ button) to type a URL or a search. ⌃⌥⌘V opens the URL on your clipboard from any app. There are preset sites, a list of recent URLs, and a home page you can set.
+- **More than one window:** open an article, docs or a second video in its own floating window next to your video. Use ⌘N, the **+** button, right-click a link → **Open Link in New Window**, or ⌘/⇧-click a link. Copy a link anywhere and press ⌃⌥⌘N to open it in a new window. New windows start tall and narrow for reading.
 - **Control playback from any app:** play/pause, skip 10s, mute and change speed without switching to the window. A small indicator shows what happened. Works on any site with an HTML5 video.
 - **Click-through (ghost) mode:** ⌃⌥⌘X makes the window see-through and ignores the mouse, so you can keep working underneath it.
 - **Snap to corners:** ⌃⌥⌘1–4 sends the window to a screen corner, and ⌃⌥⌘= / ⌃⌥⌘- resize it. Drop the window near a screen edge and it snaps into place.
@@ -40,6 +41,7 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 |---|---|
 | ⌥⌘Y | Show / hide the window |
 | ⌃⌥⌘V | Open the URL on the clipboard |
+| ⌃⌥⌘N | Open the URL on the clipboard in a new window |
 | ⌃⌥⌘X | Turn click-through mode on / off |
 | ⌃⌥⌘Space | Play / pause |
 | ⌃⌥⌘← / ⌃⌥⌘→ | Back / forward 10 seconds |
@@ -53,18 +55,22 @@ Built with Electron and plain JavaScript. There's no frontend framework, no trac
 
 | Shortcut | Action |
 |---|---|
-| ⌘L | Open URL / search |
+| ⌘L | Open URL / search (⇧↩ opens it in a new window) |
+| ⌘N | New window |
+| ⌘W | Close window (the main window just hides) |
 | ⌥⌘T | Toggle always-on-top |
 | ⌥⌘↑ / ⌥⌘↓ | Opacity up / down |
 | ⌥⌘C | Toggle compact mode |
-| ⌘[ | Back |
+| ⌘[ / ⌘] | Back / forward |
 | ⇧⌘H | Home |
 
-If another app already uses one of the global shortcuts, MacPiP logs a warning and skips it.
+Window shortcuts (corners, size, 16:9 lock) act on the window you clicked last. Media shortcuts go to the window that's playing a video. ⌥⌘Y hides all windows, then brings back the ones that were showing. If another app already uses one of the global shortcuts, MacPiP logs a warning and skips it.
+
+Right-click anywhere in a page for links (open in a new window, open in browser, copy), back/forward, reload, and new/close window.
 
 ## Menu bar icon
 
-Show/Hide · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Open at Login · Playback · Position & Size · Sign in with Google (separate window) · Quit
+Show/Hide · New Window · New Window from Clipboard · Close Extra Windows · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Open at Login · Playback · Position & Size · Sign in with Google (separate window) · Quit
 
 Close (in the drag bar) hides the window to the menu bar. Use **Quit** to exit.
 
@@ -141,6 +147,7 @@ Google may change its checks at any time, so this can break without warning.
 |---|---|
 | `src/main.js` | Main process: window, shortcuts, tray, cursor polling for the drag bar, sign-in window |
 | `src/preload.js` | Injected into every page: drag bar, URL bar, media controls and their indicator, compact mode |
+| `src/newtab.html` | Blank start page for new windows |
 | `src/inject.css` | Drag bar, URL bar, indicator and compact-mode styles |
 | `src/signin-preload.js` | Makes the sign-in window look consistently like Firefox |
 | `src/store.js` | Tiny JSON settings store |

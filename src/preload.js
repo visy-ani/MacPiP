@@ -27,6 +27,7 @@ function ensureBar() {
     makeButton('‹', 'Back', 'back'),
     makeButton('⌂', 'Home', 'home'),
     makeButton('⌕', 'Open URL (⌘L)', 'url'),
+    makeButton('+', 'New Window (⌘N)', 'new'),
     makeButton('✕', 'Close', 'close'),
   );
   bar.append(buttons);
@@ -48,12 +49,12 @@ function showUrlBar(currentUrl) {
   const input = document.createElement('input');
   input.type = 'text';
   input.spellcheck = false;
-  input.placeholder = 'Type a URL or search…';
+  input.placeholder = 'Type a URL or search…  (⇧↩ opens in a new window)';
   input.value = currentUrl || '';
   input.addEventListener('keydown', (e) => {
     e.stopPropagation(); // don't trigger the site's own keyboard shortcuts
     if (e.key === 'Enter') {
-      ipcRenderer.send('open-url', input.value);
+      ipcRenderer.send('open-url', input.value, { newWindow: e.shiftKey || e.metaKey });
       closeUrlBar();
     } else if (e.key === 'Escape') {
       closeUrlBar();
@@ -110,6 +111,7 @@ function fmtTime(t) {
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 const mediaActions = {
+  status: () => {}, // just report whether something is playing
   'play-pause': (v) => {
     if (v.paused) { v.play(); toast('▶'); } else { v.pause(); toast('❚❚'); }
   },
@@ -129,13 +131,14 @@ const mediaActions = {
   'speed-reset': (v) => { v.playbackRate = 1; toast('1×'); },
 };
 
-// Replies with whether a video was playing before the action, so "pause when hidden" can resume later.
+// Replies with whether a video was playing before the action (so "pause when hidden" can resume
+// later) and whether the page has a video at all (so shortcuts can pick the right window).
 ipcRenderer.on('media', (_e, action, replyId) => {
   const v = findVideo();
   const wasPlaying = !!v && !v.paused && !v.ended;
   if (v && mediaActions[action]) mediaActions[action](v);
-  else if (!v && action !== 'pause' && action !== 'play') toast('No video on this page');
-  if (replyId) ipcRenderer.send('media-reply', replyId, wasPlaying);
+  else if (!v && !['pause', 'play', 'status'].includes(action)) toast('No video on this page');
+  if (replyId) ipcRenderer.send('media-reply', replyId, wasPlaying, !!v);
 });
 
 // Main process polls the cursor and tells us when it's over the top strip.

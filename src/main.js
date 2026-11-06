@@ -28,6 +28,9 @@ const SIGNIN_URL =
 const PARTITION = 'persist:macpip';
 const MIN_W = 320;
 const MIN_H = 180;
+// Extra windows default to a taller shape that suits articles and docs.
+const READER_SIZE = { width: 460, height: 680 };
+const NEW_WINDOW_PAGE = path.join(__dirname, 'newtab.html');
 const BAR_HEIGHT = 24;
 const EDGE_MARGIN = 16; // gap kept between the window and the screen edge when snapped
 const SNAP_DISTANCE = 40; // drop the window this close to an edge and it snaps
@@ -60,22 +63,32 @@ const FIREFOX_UA =
 
 const injectCss = fs.readFileSync(path.join(__dirname, 'inject.css'), 'utf8');
 
-let win = null;
+// Every float window gets a state object. The "main" one is the original window: it remembers
+// its bounds, and closing it only hides it. Extra windows (⌘N) are for articles, docs, a second
+// video, etc.; closing one really closes it.
+const floats = new Set();
+let mainFloat = null;
+let activeFloat = null; // last focused float; window-level shortcuts act on it
+
 let tray = null;
 let signinWin = null;
-let barVisible = false;
-let barHideTimer = null;
 let quitting = false;
-// Click-through ("ghost") mode: the window ignores the mouse and goes translucent.
-// Not persisted, so a relaunch never leaves you with a window you can't click.
+// Click-through ("ghost") mode applies to all windows. Not persisted, so a relaunch never
+// leaves you with a window you can't click.
 let clickThrough = false;
-// Set when hiding the window paused a playing video, so showing it again resumes playback.
-let resumeOnShow = false;
-// Animated moves fire 'moved' on every frame; ignore those so edge snapping doesn't fight them.
-let ignoreMovedUntil = 0;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
+}
+
+function active() {
+  if (activeFloat && !activeFloat.win.isDestroyed()) return activeFloat;
+  return mainFloat;
+}
+
+function floatFor(webContents) {
+  for (const f of floats) if (!f.win.isDestroyed() && f.win.webContents === webContents) return f;
+  return null;
 }
 
 function defaultBounds() {
@@ -90,20 +103,44 @@ function defaultBounds() {
   };
 }
 
+// Put a new window beside the active one (left if there's room, else right), bottom-aligned.
+function newWindowBounds() {
+  const ref = active().win.getBounds();
+  const a = workAreaFor(ref);
+  const width = Math.min(READER_SIZE.width, a.width - 2 * EDGE_MARGIN);
+  const height = Math.min(READER_SIZE.height, a.height - 2 * EDGE_MARGIN);
+  let x;
+  if (ref.x - width - EDGE_MARGIN >= a.x + EDGE_MARGIN) x = ref.x - width - EDGE_MARGIN;
+  else if (ref.x + ref.width + EDGE_MARGIN + width <= a.x + a.width - EDGE_MARGIN) x = ref.x + ref.width + EDGE_MARGIN;
+  else x = Math.min(ref.x + 32, a.x + a.width - width - EDGE_MARGIN);
+  const y = Math.max(a.y + EDGE_MARGIN, Math.min(ref.y + ref.height - height, a.y + a.height - height - EDGE_MARGIN));
+  return { x, y, width, height };
+}
+
 function boundsAreVisible(b) {
   return screen.getAllDisplays().some(({ workArea: a }) =>
     b.x < a.x + a.width - 40 && b.x + b.width > a.x + 40 &&
     b.y < a.y + a.height - 40 && b.y + b.height > a.y);
 }
 
-function applyAlwaysOnTop(on) {
+function applyAlwaysOnTop(f) {
   // 'screen-saver' level floats above full-screen apps.
-  win.setAlwaysOnTop(on, 'screen-saver');
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  f.win.setAlwaysOnTop(store.get('alwaysOnTop'), 'screen-saver');
+  f.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
 }
 
-function applyAspect(on) {
-  win.setAspectRatio(on ? 16 / 9 : 0);
+function applyAspect(f) {
+  f.win.setAspectRatio(f.lockAspect ? 16 / 9 : 0);
+}
+
+function applyOpacity(f) {
+  const base = store.get('opacity');
+  f.win.setOpacity(clickThrough ? Math.min(base, store.get('ghostOpacity')) : base);
+}
+
+function applyClickThrough(f) {
+  f.win.setIgnoreMouseEvents(clickThrough);
+  applyOpacity(f);
 }
 
 function applyDock(show) {
@@ -112,12 +149,16 @@ function applyDock(show) {
   else app.dock.hide();
 }
 
-function createWindow() {
-  const saved = store.get('bounds');
-  const bounds = saved && boundsAreVisible(saved) ? saved : defaultBounds();
+function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLoad = false } = {}) {
+  let b = bounds;
+  if (!b && isMain) {
+    const saved = store.get('bounds');
+    b = saved && boundsAreVisible(saved) ? saved : defaultBounds();
+  }
+  if (!b) b = newWindowBounds();
 
-  win = new BrowserWindow({
-    ...bounds,
+  const win = new BrowserWindow({
+    ...b,
     minWidth: MIN_W,
     minHeight: MIN_H,
     frame: false,
@@ -137,9 +178,22 @@ function createWindow() {
     },
   });
 
-  applyAlwaysOnTop(store.get('alwaysOnTop'));
-  applyAspect(store.get('lockAspect'));
-  applyOpacity();
+  const f = {
+    win,
+    isMain,
+    lockAspect: isMain ? store.get('lockAspect') : false,
+    barVisible: false,
+    barHideTimer: null,
+    resumeOnShow: false, // hiding paused a playing video; resume it on show
+    restoreOnShow: false, // was visible when ⌥⌘Y hid everything
+    ignoreMovedUntil: 0, // animated moves fire 'moved' every frame; don't edge-snap during them
+  };
+  floats.add(f);
+  if (isMain) mainFloat = f;
+
+  applyAlwaysOnTop(f);
+  applyAspect(f);
+  applyClickThrough(f);
 
   const wc = win.webContents;
   wc.setUserAgent(CHROME_UA);
@@ -147,67 +201,154 @@ function createWindow() {
   wc.on('dom-ready', () => {
     wc.insertCSS(injectCss);
     wc.send('compact', store.get('compact'));
-    wc.send('bar-visible', barVisible);
+    wc.send('bar-visible', f.barVisible);
+    if (showUrlBarOnLoad) {
+      showUrlBarOnLoad = false;
+      showUrlBar(f);
+    }
   });
 
-  // Keep YouTube/Google links in this window; send everything else to the default browser.
   // Send Google sign-in to the separate Firefox-UA window instead of the embedded page.
-  const interceptSignin = (e, url) => {
-    if (isSigninUrl(url)) {
+  const interceptSignin = (e, u) => {
+    if (isSigninUrl(u)) {
       e.preventDefault();
-      openSigninWindow(url);
+      openSigninWindow(u);
     }
   };
   wc.on('will-navigate', (e) => interceptSignin(e, e.url));
   wc.on('will-redirect', (e) => interceptSignin(e, e.url));
 
-  wc.setWindowOpenHandler(({ url }) => {
-    if (isSigninUrl(url)) {
-      openSigninWindow(url);
-      return { action: 'deny' };
+  // ⌘-click / shift-click open a new float window. Plain popups stay here when they're the same
+  // site (or YouTube/Google), and go to the default browser otherwise.
+  wc.setWindowOpenHandler(({ url: u, disposition }) => {
+    if (isSigninUrl(u)) {
+      openSigninWindow(u);
+    } else if (disposition === 'background-tab' || disposition === 'new-window') {
+      newWindow(u);
+    } else if (isInternalUrl(u, f)) {
+      wc.loadURL(u);
+    } else {
+      shell.openExternal(u);
     }
-    if (isInternalUrl(url)) wc.loadURL(url);
-    else shell.openExternal(url);
     return { action: 'deny' };
   });
 
+  wc.on('context-menu', (_e, params) => showContextMenu(f, params));
+
   const saveBounds = () => {
-    if (!win.isDestroyed()) store.set('bounds', win.getBounds());
+    if (f.isMain && !win.isDestroyed()) store.set('bounds', win.getBounds());
   };
   win.on('moved', () => {
-    snapToEdges();
+    snapToEdges(f);
     saveBounds();
   });
   win.on('resized', saveBounds);
+  win.on('focus', () => {
+    activeFloat = f;
+    updateMenus();
+  });
 
   win.on('close', (e) => {
     saveBounds();
-    if (!quitting) {
+    if (f.isMain && !quitting) {
       e.preventDefault();
       win.hide();
     }
   });
+  win.on('closed', () => {
+    floats.delete(f);
+    if (activeFloat === f) activeFloat = null;
+    if (lastMediaFloat === f) lastMediaFloat = null;
+    clearTimeout(f.barHideTimer);
+    updateMenus();
+  });
   win.on('show', () => {
     updateTrayMenu();
-    if (resumeOnShow) {
-      resumeOnShow = false;
-      sendMedia('play');
+    if (f.resumeOnShow) {
+      f.resumeOnShow = false;
+      sendMedia('play', f);
     }
   });
   win.on('hide', async () => {
     updateTrayMenu();
     if (store.get('pauseWhenHidden') && !quitting) {
-      const wasPlaying = await sendMedia('pause');
+      const wasPlaying = await sendMedia('pause', f);
       // The window may have come back while we waited for the page.
-      if (wasPlaying && !win.isVisible()) resumeOnShow = true;
-      else if (wasPlaying) sendMedia('play');
+      if (win.isDestroyed()) return;
+      if (wasPlaying && !win.isVisible()) f.resumeOnShow = true;
+      else if (wasPlaying) sendMedia('play', f);
     }
   });
 
-  win.once('ready-to-show', () => win.show());
-  win.loadURL(store.get('homeUrl'));
+  win.once('ready-to-show', () => {
+    win.show();
+    if (!isMain) win.focus();
+  });
+  if (url) win.loadURL(url);
+  else win.loadFile(NEW_WINDOW_PAGE);
+  return f;
+}
 
-  startHoverWatcher();
+// Open a new float window. With a URL it loads that; without one it shows the URL bar.
+function newWindow(input) {
+  const url = input ? normalizeUrl(input) : null;
+  if (url) addRecent(url);
+  const f = createFloat({ url, showUrlBarOnLoad: !url });
+  activeFloat = f;
+  updateMenus();
+  return f;
+}
+
+function newWindowFromClipboard() {
+  const text = clipboard.readText().trim();
+  newWindow(/^https?:\/\/\S+$/i.test(text) ? text : null);
+}
+
+function closeFloat(f = active()) {
+  if (f.isMain) f.win.hide();
+  else f.win.close();
+}
+
+function closeExtraWindows() {
+  for (const f of [...floats]) if (!f.isMain) f.win.close();
+}
+
+function showContextMenu(f, params) {
+  const wc = f.win.webContents;
+  const items = [];
+  if (params.linkURL) {
+    items.push(
+      { label: 'Open Link in New Window', click: () => newWindow(params.linkURL) },
+      { label: 'Open Link Here', click: () => wc.loadURL(params.linkURL) },
+      { label: 'Open Link in Browser', click: () => shell.openExternal(params.linkURL) },
+      { label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) },
+      { type: 'separator' },
+    );
+  }
+  if (params.isEditable) {
+    items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' });
+  } else if (params.selectionText) {
+    const text = params.selectionText.trim();
+    const short = text.length > 24 ? `${text.slice(0, 24)}…` : text;
+    items.push(
+      { role: 'copy' },
+      { label: `Search Google for “${short}”`, click: () => newWindow(text) },
+      { type: 'separator' },
+    );
+  }
+  items.push(
+    { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
+    { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
+    { label: 'Reload', click: () => wc.reload() },
+    { type: 'separator' },
+    { label: 'Open URL…', click: () => showUrlBar(f) },
+    { label: 'Open Page in Browser', enabled: /^https?:/.test(wc.getURL()), click: () => shell.openExternal(wc.getURL()) },
+    { label: 'Copy Page URL', enabled: /^https?:/.test(wc.getURL()), click: () => clipboard.writeText(wc.getURL()) },
+    { type: 'separator' },
+    { label: 'New Window', click: () => newWindow() },
+    { label: f.isMain ? 'Hide Window' : 'Close Window', click: () => closeFloat(f) },
+  );
+  Menu.buildFromTemplate(items).popup({ window: f.win });
 }
 
 // "www.youtube.com" -> "youtube.com". Good enough to tell "same site" for popups.
@@ -216,12 +357,13 @@ function baseDomain(hostname) {
 }
 
 // Popups stay in the window when they're YouTube/Google or the same site as the current page.
-function isInternalUrl(url) {
+function isInternalUrl(url, f = active()) {
   try {
     const { hostname } = new URL(url);
     if (/(^|\.)(youtube\.com|youtu\.be|google\.com|googleusercontent\.com)$/.test(hostname)) return true;
-    const current = win && !win.isDestroyed() ? win.webContents.getURL() : '';
-    return current !== '' && baseDomain(new URL(current).hostname) === baseDomain(hostname);
+    const current = f && !f.win.isDestroyed() ? f.win.webContents.getURL() : '';
+    if (!/^https?:/.test(current)) return false;
+    return baseDomain(new URL(current).hostname) === baseDomain(hostname);
   } catch {
     return false;
   }
@@ -243,19 +385,20 @@ function addRecent(url) {
   store.set('recentUrls', recent.slice(0, MAX_RECENT));
 }
 
-function openUrl(input) {
+function openUrl(input, f = active()) {
   const url = normalizeUrl(input);
   if (!url) return;
   addRecent(url);
-  win.webContents.loadURL(url);
-  if (!win.isVisible()) win.show();
+  f.win.webContents.loadURL(url);
+  if (!f.win.isVisible()) f.win.show();
   updateMenus();
 }
 
-function showUrlBar() {
-  if (!win.isVisible()) win.show();
-  win.focus();
-  win.webContents.send('url-bar', win.webContents.getURL());
+function showUrlBar(f = active()) {
+  if (!f.win.isVisible()) f.win.show();
+  f.win.focus();
+  const current = f.win.webContents.getURL();
+  f.win.webContents.send('url-bar', /^https?:/.test(current) ? current : '');
 }
 
 function openClipboardUrl() {
@@ -264,15 +407,15 @@ function openClipboardUrl() {
 }
 
 function setCurrentAsHome() {
-  const url = win.webContents.getURL();
+  const url = active().win.webContents.getURL();
   if (/^https?:/i.test(url)) {
     store.set('homeUrl', url);
     updateMenus();
   }
 }
 
-function goHome() {
-  win.webContents.loadURL(store.get('homeUrl'));
+function goHome(f = active()) {
+  f.win.webContents.loadURL(store.get('homeUrl'));
 }
 
 function isSigninUrl(url) {
@@ -288,48 +431,57 @@ function isSigninUrl(url) {
 // Frameless windows can't hover-detect reliably over drag regions, so poll the cursor.
 function startHoverWatcher() {
   setInterval(() => {
-    if (!win || win.isDestroyed() || !win.isVisible()) return;
-    if (clickThrough) {
-      setBarVisible(false);
-      return;
-    }
     const p = screen.getCursorScreenPoint();
-    const b = win.getBounds();
-    const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
-    const inTopStrip = inside && p.y < b.y + BAR_HEIGHT + 4;
-    if (inTopStrip) {
-      clearTimeout(barHideTimer);
-      barHideTimer = null;
-      setBarVisible(true);
-    } else if (barVisible && !barHideTimer) {
-      barHideTimer = setTimeout(() => {
-        barHideTimer = null;
-        setBarVisible(false);
-      }, 500);
+    for (const f of floats) {
+      if (f.win.isDestroyed() || !f.win.isVisible()) continue;
+      if (clickThrough) {
+        setBarVisible(f, false);
+        continue;
+      }
+      const b = f.win.getBounds();
+      const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
+      const inTopStrip = inside && p.y < b.y + BAR_HEIGHT + 4;
+      if (inTopStrip) {
+        clearTimeout(f.barHideTimer);
+        f.barHideTimer = null;
+        setBarVisible(f, true);
+      } else if (f.barVisible && !f.barHideTimer) {
+        f.barHideTimer = setTimeout(() => {
+          f.barHideTimer = null;
+          setBarVisible(f, false);
+        }, 500);
+      }
     }
   }, 100);
 }
 
-function setBarVisible(v) {
-  if (v === barVisible) return;
-  barVisible = v;
-  win.webContents.send('bar-visible', v);
+function setBarVisible(f, v) {
+  if (v === f.barVisible || f.win.isDestroyed()) return;
+  f.barVisible = v;
+  f.win.webContents.send('bar-visible', v);
 }
 
-ipcMain.on('bar-action', (_e, action) => {
-  const wc = win.webContents;
+ipcMain.on('bar-action', (e, action) => {
+  const f = floatFor(e.sender);
+  if (!f) return;
+  const wc = f.win.webContents;
   if (action === 'back') {
     if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   } else if (action === 'home') {
-    goHome();
+    goHome(f);
   } else if (action === 'url') {
-    showUrlBar();
+    showUrlBar(f);
+  } else if (action === 'new') {
+    newWindow();
   } else if (action === 'close') {
-    win.hide();
+    closeFloat(f);
   }
 });
 
-ipcMain.on('open-url', (_e, input) => openUrl(input));
+ipcMain.on('open-url', (e, input, opts = {}) => {
+  if (opts.newWindow) newWindow(input);
+  else openUrl(input, floatFor(e.sender) || active());
+});
 
 const MEDIA_SHORTCUTS = [
   { label: 'Play / Pause', action: 'play-pause', accel: 'Control+Alt+Command+Space' },
@@ -344,26 +496,52 @@ const MEDIA_SHORTCUTS = [
 let mediaReplyId = 0;
 const mediaReplies = new Map();
 
-// Ask the page to run a media action. Resolves to whether a video was playing beforehand.
-function sendMedia(action) {
-  if (!win || win.isDestroyed()) return Promise.resolve(false);
+let lastMediaFloat = null; // window the last media shortcut went to
+
+// Ask a window's page to run a media action. Resolves to { playing, hasVideo }, where `playing`
+// is whether a video was playing before the action.
+function mediaRequest(action, f) {
+  const none = { playing: false, hasVideo: false };
+  if (!f || f.win.isDestroyed()) return Promise.resolve(none);
   const id = ++mediaReplyId;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { mediaReplies.delete(id); resolve(false); }, 1000);
-    mediaReplies.set(id, (wasPlaying) => { clearTimeout(timer); resolve(wasPlaying); });
-    win.webContents.send('media', action, id);
+    const timer = setTimeout(() => { mediaReplies.delete(id); resolve(none); }, 1000);
+    mediaReplies.set(id, (state) => { clearTimeout(timer); resolve(state); });
+    f.win.webContents.send('media', action, id);
   });
 }
 
-ipcMain.on('media-reply', (_e, id, wasPlaying) => {
+// Same, resolving to whether a video was playing beforehand.
+async function sendMedia(action, f) {
+  return (await mediaRequest(action, f)).playing;
+}
+
+ipcMain.on('media-reply', (_e, id, playing, hasVideo) => {
   const done = mediaReplies.get(id);
   mediaReplies.delete(id);
-  if (done) done(wasPlaying);
+  if (done) done({ playing: !!playing, hasVideo: !!hasVideo });
 });
+
+// Where media shortcuts go: a window that's playing; else one that has a video (preferring the
+// one last controlled); else the active window. The active window wins ties.
+async function mediaTarget() {
+  const visible = [...floats].filter((f) => !f.win.isDestroyed() && f.win.isVisible());
+  const states = await Promise.all(visible.map((f) => mediaRequest('status', f)));
+  const pick = (list) => [active(), lastMediaFloat].find((f) => list.includes(f)) || list[0];
+  return pick(visible.filter((_f, i) => states[i].playing)) ||
+    pick(visible.filter((_f, i) => states[i].hasVideo)) ||
+    active();
+}
+
+async function mediaAction(action) {
+  const f = await mediaTarget();
+  lastMediaFloat = f;
+  sendMedia(action, f);
+}
 
 function togglePauseWhenHidden() {
   store.set('pauseWhenHidden', !store.get('pauseWhenHidden'));
-  if (!store.get('pauseWhenHidden')) resumeOnShow = false;
+  if (!store.get('pauseWhenHidden')) for (const f of floats) f.resumeOnShow = false;
   updateMenus();
 }
 
@@ -373,47 +551,51 @@ function mediaMenu() {
       label: m.label,
       accelerator: m.accel,
       registerAccelerator: false,
-      click: () => sendMedia(m.action),
+      click: () => mediaAction(m.action),
     })),
     { type: 'separator' },
     { label: 'Pause When Hidden', type: 'checkbox', checked: store.get('pauseWhenHidden'), click: togglePauseWhenHidden },
   ];
 }
 
+function anyVisible() {
+  return [...floats].some((f) => !f.win.isDestroyed() && f.win.isVisible());
+}
+
+// ⌥⌘Y hides every window, and brings back the ones that were showing.
 function toggleWindow() {
-  if (win.isVisible()) {
-    win.hide();
+  if (anyVisible()) {
+    for (const f of floats) {
+      f.restoreOnShow = f.win.isVisible();
+      if (f.restoreOnShow) f.win.hide();
+    }
   } else {
-    win.show();
-    win.focus();
+    const toShow = [...floats].filter((f) => f.restoreOnShow);
+    for (const f of toShow.length ? toShow : [mainFloat]) f.win.show();
+    active().win.focus();
   }
 }
 
 function toggleAlwaysOnTop() {
-  const on = !store.get('alwaysOnTop');
-  store.set('alwaysOnTop', on);
-  applyAlwaysOnTop(on);
+  store.set('alwaysOnTop', !store.get('alwaysOnTop'));
+  for (const f of floats) applyAlwaysOnTop(f);
   updateMenus();
-}
-
-function applyOpacity() {
-  const base = store.get('opacity');
-  win.setOpacity(clickThrough ? Math.min(base, store.get('ghostOpacity')) : base);
 }
 
 function changeOpacity(delta) {
   const next = Math.round(Math.min(1, Math.max(0.4, store.get('opacity') + delta)) * 100) / 100;
   store.set('opacity', next);
-  applyOpacity();
+  for (const f of floats) applyOpacity(f);
 }
 
 function toggleClickThrough() {
   clickThrough = !clickThrough;
-  win.setIgnoreMouseEvents(clickThrough);
-  // A focused window would still swallow key presses meant for the app underneath.
-  if (clickThrough) win.blur();
-  applyOpacity();
-  if (clickThrough && !win.isVisible()) win.showInactive();
+  for (const f of floats) {
+    applyClickThrough(f);
+    // A focused window would still swallow key presses meant for the app underneath.
+    if (clickThrough) f.win.blur();
+  }
+  if (clickThrough && !anyVisible()) mainFloat.win.showInactive();
   if (tray) tray.setToolTip(clickThrough ? 'MacPiP (click-through: ⌃⌥⌘X to exit)' : 'MacPiP');
   updateMenus();
 }
@@ -421,17 +603,19 @@ function toggleClickThrough() {
 function toggleCompact() {
   const on = !store.get('compact');
   store.set('compact', on);
-  win.webContents.send('compact', on);
+  for (const f of floats) f.win.webContents.send('compact', on);
   updateMenus();
 }
 
+// The 16:9 lock is per window; only the main window's choice is remembered.
 function toggleAspect() {
-  const on = !store.get('lockAspect');
-  store.set('lockAspect', on);
-  applyAspect(on);
-  if (on) {
-    const b = win.getBounds();
-    win.setBounds({ ...b, height: Math.max(MIN_H, Math.round(b.width * 9 / 16)) });
+  const f = active();
+  f.lockAspect = !f.lockAspect;
+  if (f.isMain) store.set('lockAspect', f.lockAspect);
+  applyAspect(f);
+  if (f.lockAspect) {
+    const b = f.win.getBounds();
+    f.win.setBounds({ ...b, height: Math.max(MIN_H, Math.round(b.width * 9 / 16)) });
   }
   updateMenus();
 }
@@ -442,7 +626,7 @@ function toggleDock() {
   applyDock(show);
   updateMenus();
   // Hiding the dock icon can drop focus; bring the window back.
-  if (win.isVisible()) win.show();
+  if (active().win.isVisible()) active().win.show();
 }
 
 function workAreaFor(b) {
@@ -467,44 +651,42 @@ function boundsAtCorner(corner, width, height, a) {
   };
 }
 
-function animateBounds(bounds) {
-  ignoreMovedUntil = Date.now() + 600;
-  win.setBounds(bounds, true);
+function animateBounds(f, bounds) {
+  f.ignoreMovedUntil = Date.now() + 600;
+  f.win.setBounds(bounds, true);
 }
 
-function moveToCorner(corner) {
-  const b = win.getBounds();
-  animateBounds(boundsAtCorner(corner, b.width, b.height, workAreaFor(b)));
-  if (!win.isVisible()) win.showInactive();
-  store.set('bounds', win.getBounds());
+function moveToCorner(corner, f = active()) {
+  const b = f.win.getBounds();
+  animateBounds(f, boundsAtCorner(corner, b.width, b.height, workAreaFor(b)));
+  if (!f.win.isVisible()) f.win.showInactive();
 }
 
 // Resize to a given width, keeping the window pinned to its nearest corner.
-function resizeToWidth(width) {
-  const b = win.getBounds();
+function resizeToWidth(width, f = active()) {
+  const b = f.win.getBounds();
   const a = workAreaFor(b);
   const w = Math.round(Math.min(a.width - 2 * EDGE_MARGIN, Math.max(MIN_W, width)));
-  let h = store.get('lockAspect') ? Math.round(w * 9 / 16) : Math.round(b.height * w / b.width);
+  let h = f.lockAspect ? Math.round(w * 9 / 16) : Math.round(b.height * w / b.width);
   h = Math.min(a.height - 2 * EDGE_MARGIN, Math.max(MIN_H, h));
-  animateBounds(boundsAtCorner(nearestCorner(b), w, h, a));
-  store.set('bounds', win.getBounds());
+  animateBounds(f, boundsAtCorner(nearestCorner(b), w, h, a));
 }
 
 function scaleWindow(factor) {
-  resizeToWidth(win.getBounds().width * factor);
+  resizeToWidth(active().win.getBounds().width * factor);
 }
 
 // After a drag, pull the window onto any screen edge it was dropped close to.
-function snapToEdges() {
-  if (!store.get('snapToEdges') || win.isDestroyed() || Date.now() < ignoreMovedUntil) return;
-  const b = win.getBounds();
+function snapToEdges(f) {
+  if (!store.get('snapToEdges') || f.win.isDestroyed() || Date.now() < f.ignoreMovedUntil) return;
+  const b = f.win.getBounds();
   const a = workAreaFor(b);
   let { x, y } = b;
   if (Math.abs(b.x - a.x) < SNAP_DISTANCE) x = a.x + EDGE_MARGIN;
   else if (Math.abs(a.x + a.width - (b.x + b.width)) < SNAP_DISTANCE) x = a.x + a.width - b.width - EDGE_MARGIN;
   if (Math.abs(b.y - a.y) < SNAP_DISTANCE) y = a.y + EDGE_MARGIN;
   else if (Math.abs(a.y + a.height - (b.y + b.height)) < SNAP_DISTANCE) y = a.y + a.height - b.height - EDGE_MARGIN;
-  if (x !== b.x || y !== b.y) animateBounds({ ...b, x, y });
+  if (x !== b.x || y !== b.y) animateBounds(f, { ...b, x, y });
 }
 
 function toggleSnapToEdges() {
@@ -545,9 +727,10 @@ function toggleOpenAtLogin() {
 }
 
 function resetPosition() {
-  win.setBounds(defaultBounds());
-  store.set('bounds', win.getBounds());
-  if (!win.isVisible()) win.show();
+  const f = active();
+  f.win.setBounds(f.isMain ? defaultBounds() : newWindowBounds());
+  if (f.isMain) store.set('bounds', f.win.getBounds());
+  if (!f.win.isVisible()) f.win.show();
 }
 
 // Fallback: Google sign-in in a normal framed window that shares the same session.
@@ -580,8 +763,8 @@ function openSigninWindow(url = SIGNIN_URL) {
     // Once Google hands us back to YouTube, we're signed in.
     if (new URL(u).hostname.endsWith('youtube.com')) {
       signinWin.close();
-      goHome();
-      win.show();
+      goHome(mainFloat);
+      mainFloat.win.show();
     }
   });
   signinWin.on('closed', () => { signinWin = null; });
@@ -600,6 +783,16 @@ function buildAppMenu() {
         { role: 'quit' },
       ],
     },
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Window', accelerator: 'Command+N', click: () => newWindow() },
+        { label: 'New Window from Clipboard', accelerator: 'Control+Alt+Command+N', registerAccelerator: false, click: newWindowFromClipboard },
+        { label: 'Open URL…', accelerator: 'Command+L', click: () => showUrlBar() },
+        { type: 'separator' },
+        { label: 'Close Window', accelerator: 'Command+W', click: () => closeFloat() },
+      ],
+    },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -607,14 +800,14 @@ function buildAppMenu() {
         { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), accelerator: 'Alt+Command+T', click: toggleAlwaysOnTop },
         { label: 'Compact Mode', type: 'checkbox', checked: store.get('compact'), accelerator: 'Alt+Command+C', click: toggleCompact },
         { label: 'Click-Through Mode', type: 'checkbox', checked: clickThrough, accelerator: 'Control+Alt+Command+X', registerAccelerator: false, click: toggleClickThrough },
-        { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
+        { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: !!active()?.lockAspect, click: toggleAspect },
         { type: 'separator' },
         { label: 'Increase Opacity', accelerator: 'Alt+Command+Up', click: () => changeOpacity(0.1) },
         { label: 'Decrease Opacity', accelerator: 'Alt+Command+Down', click: () => changeOpacity(-0.1) },
         { type: 'separator' },
-        { label: 'Back', accelerator: 'Command+[', click: () => ipcMain.emit('bar-action', null, 'back') },
-        { label: 'Home', accelerator: 'Shift+Command+H', click: goHome },
-        { label: 'Open URL…', accelerator: 'Command+L', click: showUrlBar },
+        { label: 'Back', accelerator: 'Command+[', click: () => { const h = active().win.webContents.navigationHistory; if (h.canGoBack()) h.goBack(); } },
+        { label: 'Forward', accelerator: 'Command+]', click: () => { const h = active().win.webContents.navigationHistory; if (h.canGoForward()) h.goForward(); } },
+        { label: 'Home', accelerator: 'Shift+Command+H', click: () => goHome() },
         { type: 'separator' },
         { label: 'Playback', submenu: mediaMenu() },
         { label: 'Position & Size', submenu: positionMenu() },
@@ -656,17 +849,22 @@ function sitesMenu() {
 }
 
 function buildTrayMenu() {
+  const extras = [...floats].filter((f) => !f.isMain).length;
   return Menu.buildFromTemplate([
-    { label: win.isVisible() ? 'Hide' : 'Show', accelerator: 'Alt+Command+Y', click: toggleWindow },
+    { label: anyVisible() ? 'Hide' : 'Show', accelerator: 'Alt+Command+Y', click: toggleWindow },
     { type: 'separator' },
-    { label: 'Open URL…', click: showUrlBar },
+    { label: 'New Window', click: () => newWindow() },
+    { label: 'New Window from Clipboard', accelerator: 'Control+Alt+Command+N', click: newWindowFromClipboard },
+    { label: `Close Extra Windows (${extras})`, enabled: extras > 0, click: closeExtraWindows },
+    { type: 'separator' },
+    { label: 'Open URL…', click: () => showUrlBar() },
     { label: 'Open URL from Clipboard', accelerator: 'Control+Alt+Command+V', click: openClipboardUrl },
     { label: 'Sites', submenu: sitesMenu() },
     { type: 'separator' },
     { label: 'Compact Mode', type: 'checkbox', checked: store.get('compact'), click: toggleCompact },
     { label: 'Click-Through Mode', type: 'checkbox', checked: clickThrough, accelerator: 'Control+Alt+Command+X', click: toggleClickThrough },
     { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), click: toggleAlwaysOnTop },
-    { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
+    { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: !!active()?.lockAspect, click: toggleAspect },
     { label: 'Show Dock Icon', type: 'checkbox', checked: store.get('showInDock'), click: toggleDock },
     {
       label: openAtLoginSupported() ? 'Open at Login' : 'Open at Login (installed app only)',
@@ -685,16 +883,17 @@ function buildTrayMenu() {
 }
 
 function updateTrayMenu() {
-  if (tray && win) tray.setContextMenu(buildTrayMenu());
+  if (tray && mainFloat) tray.setContextMenu(buildTrayMenu());
 }
 
 function updateMenus() {
+  if (quitting || !mainFloat) return;
   Menu.setApplicationMenu(buildAppMenu());
   updateTrayMenu();
 }
 
 app.on('second-instance', () => {
-  if (win) { win.show(); win.focus(); }
+  if (mainFloat) { mainFloat.win.show(); mainFloat.win.focus(); }
 });
 
 app.whenReady().then(() => {
@@ -713,7 +912,8 @@ app.whenReady().then(() => {
   });
   applyDock(store.get('showInDock'));
 
-  createWindow();
+  createFloat({ isMain: true, url: store.get('homeUrl') });
+  startHoverWatcher();
 
   tray = new Tray(trayImage());
   tray.setToolTip('MacPiP');
@@ -724,18 +924,19 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   quitting = true;
-  if (win && !win.isDestroyed()) store.set('bounds', win.getBounds());
+  if (mainFloat && !mainFloat.win.isDestroyed()) store.set('bounds', mainFloat.win.getBounds());
   store.flush();
 });
 
 const GLOBAL_SHORTCUTS = [
   ['Alt+Command+Y', toggleWindow],
   ['Control+Alt+Command+V', openClipboardUrl],
+  ['Control+Alt+Command+N', newWindowFromClipboard],
   ['Control+Alt+Command+X', toggleClickThrough],
   ...CORNERS.map((c) => [`Control+Alt+Command+${c.key}`, () => moveToCorner(c.id)]),
   ['Control+Alt+Command+=', () => scaleWindow(1.15)],
   ['Control+Alt+Command+-', () => scaleWindow(1 / 1.15)],
-  ...MEDIA_SHORTCUTS.map((m) => [m.accel, () => sendMedia(m.action)]),
+  ...MEDIA_SHORTCUTS.map((m) => [m.accel, () => mediaAction(m.action)]),
 ];
 
 function registerGlobalShortcuts() {
@@ -748,5 +949,5 @@ function registerGlobalShortcuts() {
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 
-// Keep running in the menu bar when the window is hidden.
+// Keep running in the menu bar when every window is hidden or closed.
 app.on('window-all-closed', (e) => e.preventDefault());
