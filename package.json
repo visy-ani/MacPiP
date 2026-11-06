@@ -16,7 +16,8 @@
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "build": "electron-builder --mac dir",
     "build:universal": "electron-builder --mac dir --universal",
-    "make-launcher": "bash scripts/make-dev-launcher.sh"
+    "make-launcher": "bash scripts/make-dev-launcher.sh",
+    "install-app": "bash scripts/install-app.sh"
   },
   "build": {
     "appId": "dev.visyani.macpip",
@@ -35,7 +36,12 @@
       "identity": null,
       "icon": "build/icon.png"
     },
-    "afterPack": "build/adhoc-sign.js"
+    "afterSign": "build/adhoc-sign.js",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    }
   },
   "devDependencies": {
     "electron": "^44.4.5",

@@ -120,6 +120,15 @@ If macOS warns on first launch, right-click the app and choose **Open**, once.
 
 > If the project lives in an iCloud-synced folder (like `~/Documents`), a Finder drag can carry over file attributes that break the signature. Use the `ditto --noextattr` command above, or run `xattr -cr "/Applications/MacPiP.app"` afterwards.
 
+## Install from source (one command)
+
+```bash
+npm install
+npm run install-app
+```
+
+This builds `MacPiP.app`, copies it into `/Applications` (replacing any older copy), and launches it. Run it again after pulling changes to update. Then turn on **Open at Login** in the menu bar icon, and MacPiP will start quietly in the menu bar every time you log in.
+
 ## Signing in to Google
 
 Google blocks sign-in from many embedded browsers ("This browser or app may not be secure"). To work around this, MacPiP never signs you in inside the floating window. Clicking **Sign in** on YouTube (or using the menu bar item) opens a separate, normal window that presents itself as Firefox. It shares the same session with the floating window. Once Google sends you back to YouTube, that window closes and the floating window reloads signed in.

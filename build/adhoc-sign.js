@@ -1,4 +1,5 @@
-// Ad-hoc sign the unsigned bundle so Apple Silicon doesn't report it as "damaged".
+// Ad-hoc sign the unsigned bundle so Apple Silicon doesn't report it as "damaged". Runs as
+// afterSign (not afterPack) so it signs the final binaries, after Electron fuses are flipped.
 // Signing happens in a temp dir because iCloud-synced folders (e.g. ~/Documents) keep
 // re-adding extended attributes that codesign rejects.
 const { execFileSync } = require('child_process');
