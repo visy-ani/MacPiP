@@ -533,6 +533,17 @@ function positionMenu() {
   ];
 }
 
+// Only meaningful for the packaged app; in dev it would register the bare Electron binary.
+function openAtLoginSupported() {
+  return app.isPackaged;
+}
+
+function toggleOpenAtLogin() {
+  const on = !app.getLoginItemSettings().openAtLogin;
+  app.setLoginItemSettings({ openAtLogin: on });
+  updateMenus();
+}
+
 function resetPosition() {
   win.setBounds(defaultBounds());
   store.set('bounds', win.getBounds());
@@ -657,6 +668,13 @@ function buildTrayMenu() {
     { label: 'Always on Top', type: 'checkbox', checked: store.get('alwaysOnTop'), click: toggleAlwaysOnTop },
     { label: 'Lock 16:9 Aspect Ratio', type: 'checkbox', checked: store.get('lockAspect'), click: toggleAspect },
     { label: 'Show Dock Icon', type: 'checkbox', checked: store.get('showInDock'), click: toggleDock },
+    {
+      label: openAtLoginSupported() ? 'Open at Login' : 'Open at Login (installed app only)',
+      type: 'checkbox',
+      enabled: openAtLoginSupported(),
+      checked: openAtLoginSupported() && app.getLoginItemSettings().openAtLogin,
+      click: toggleOpenAtLogin,
+    },
     { type: 'separator' },
     { label: 'Playback', submenu: mediaMenu() },
     { label: 'Position & Size', submenu: positionMenu() },

@@ -64,7 +64,7 @@ If another app already uses one of the global shortcuts, MacPiP logs a warning a
 
 ## Menu bar icon
 
-Show/Hide · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Playback · Position & Size · Sign in with Google (separate window) · Quit
+Show/Hide · Open URL… · Open URL from Clipboard · Sites (presets, recent, set home) · Compact Mode · Click-Through Mode · Always on Top · Lock 16:9 Aspect Ratio · Show Dock Icon · Open at Login · Playback · Position & Size · Sign in with Google (separate window) · Quit
 
 Close (in the drag bar) hides the window to the menu bar. Use **Quit** to exit.
 
