@@ -184,6 +184,7 @@ function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLo
     lockAspect: isMain ? store.get('lockAspect') : false,
     barVisible: false,
     barHideTimer: null,
+    snapTimer: null, // pending edge snap, run once a drag has stopped
     resumeOnShow: false, // hiding paused a playing video; resume it on show
     restoreOnShow: false, // was visible when ⌥⌘Y hid everything
     ignoreMovedUntil: 0, // animated moves fire 'moved' every frame; don't edge-snap during them
@@ -239,7 +240,7 @@ function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLo
     if (f.isMain && !win.isDestroyed()) store.set('bounds', win.getBounds());
   };
   win.on('moved', () => {
-    snapToEdges(f);
+    scheduleSnap(f);
     saveBounds();
   });
   win.on('resized', saveBounds);
@@ -260,6 +261,7 @@ function createFloat({ isMain = false, url = null, bounds = null, showUrlBarOnLo
     if (activeFloat === f) activeFloat = null;
     if (lastMediaFloat === f) lastMediaFloat = null;
     clearTimeout(f.barHideTimer);
+    clearTimeout(f.snapTimer);
     updateMenus();
   });
   win.on('show', () => {
@@ -676,16 +678,29 @@ function scaleWindow(factor) {
   resizeToWidth(active().win.getBounds().width * factor);
 }
 
-// After a drag, pull the window onto any screen edge it was dropped close to.
+// macOS reports 'moved' continuously while the user is still dragging, so wait until the window
+// has been still for a moment before snapping. Snapping mid-drag fought the user's drag.
+const SNAP_DELAY = 350;
+
+function scheduleSnap(f) {
+  clearTimeout(f.snapTimer);
+  if (Date.now() < f.ignoreMovedUntil) return; // our own animated move
+  f.snapTimer = setTimeout(() => snapToEdges(f), SNAP_DELAY);
+}
+
+// After a drag, pull the window onto a screen edge it was dropped close to. It only ever pulls
+// toward the edge: a window placed closer than the margin, flush in a corner, or partly
+// off-screen is left exactly where the user put it.
 function snapToEdges(f) {
-  if (!store.get('snapToEdges') || f.win.isDestroyed() || Date.now() < f.ignoreMovedUntil) return;
+  if (!store.get('snapToEdges') || f.win.isDestroyed()) return;
   const b = f.win.getBounds();
   const a = workAreaFor(b);
+  const shouldSnap = (gap) => gap > EDGE_MARGIN && gap < SNAP_DISTANCE;
   let { x, y } = b;
-  if (Math.abs(b.x - a.x) < SNAP_DISTANCE) x = a.x + EDGE_MARGIN;
-  else if (Math.abs(a.x + a.width - (b.x + b.width)) < SNAP_DISTANCE) x = a.x + a.width - b.width - EDGE_MARGIN;
-  if (Math.abs(b.y - a.y) < SNAP_DISTANCE) y = a.y + EDGE_MARGIN;
-  else if (Math.abs(a.y + a.height - (b.y + b.height)) < SNAP_DISTANCE) y = a.y + a.height - b.height - EDGE_MARGIN;
+  if (shouldSnap(b.x - a.x)) x = a.x + EDGE_MARGIN;
+  else if (shouldSnap(a.x + a.width - (b.x + b.width))) x = a.x + a.width - b.width - EDGE_MARGIN;
+  if (shouldSnap(b.y - a.y)) y = a.y + EDGE_MARGIN;
+  else if (shouldSnap(a.y + a.height - (b.y + b.height))) y = a.y + a.height - b.height - EDGE_MARGIN;
   if (x !== b.x || y !== b.y) animateBounds(f, { ...b, x, y });
 }
 
